@@ -64,15 +64,56 @@ Backend API for Instinct.fi - A gamified consumer trading app built on Solana th
 
 ## 🚀 Quick Start
 
-### 1. Clone and Install
+### ⚡ Easy Setup (Recommended)
+
+The fastest way to get started is using our automated setup script:
 
 ```bash
-git clone <repository-url>
-cd instinct-fi-api
+# Clone the repository
+git clone https://github.com/gilangbh/instinctfi-backend.git
+cd instinctfi-backend
+
+# Run the setup script
+chmod +x scripts/setup.sh
+./scripts/setup.sh
+```
+
+The setup script will:
+- ✅ Check prerequisites (Node.js, PostgreSQL, Redis)
+- ✅ Install dependencies
+- ✅ Create `.env` file from template
+- ✅ Generate Prisma client
+- ✅ Create and migrate database
+- ✅ Optionally seed the database with sample data
+- ✅ Optionally create systemd service for production
+
+After setup completes, just edit your `.env` file with your configuration and start the server:
+
+```bash
+# Start Redis (in a separate terminal)
+redis-server
+
+# Start the API
+npm run dev
+```
+
+The API will be available at `http://localhost:3001`
+
+---
+
+### 🔧 Manual Setup (Alternative)
+
+If you prefer to set up manually or need more control:
+
+#### 1. Clone and Install
+
+```bash
+git clone https://github.com/gilangbh/instinctfi-backend.git
+cd instinctfi-backend
 npm install
 ```
 
-### 2. Environment Setup
+#### 2. Environment Setup
 
 ```bash
 cp env.example .env
@@ -104,9 +145,12 @@ PORT=3001
 CORS_ORIGIN="http://localhost:3000"
 ```
 
-### 3. Database Setup
+#### 3. Database Setup
 
 ```bash
+# Create database
+createdb instinct_fi
+
 # Generate Prisma client
 npm run db:generate
 
@@ -117,9 +161,13 @@ npm run db:migrate
 npm run db:seed
 ```
 
-### 4. Start Development Server
+#### 4. Start Development Server
 
 ```bash
+# Start Redis (in a separate terminal)
+redis-server
+
+# Start the API
 npm run dev
 ```
 
