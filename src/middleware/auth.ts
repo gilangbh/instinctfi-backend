@@ -5,21 +5,6 @@ import { JwtPayload } from '@/types';
 import { PrismaClient } from '@prisma/client';
 import logger from '@/utils/logger';
 
-// Extend Request interface to include user
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        id: string;
-        walletAddress: string;
-        username: string;
-        isBanned: boolean;
-        banExpiresAt?: Date;
-      };
-    }
-  }
-}
-
 export class AuthMiddleware {
   constructor(private prisma: PrismaClient) {}
 
@@ -74,7 +59,14 @@ export class AuthMiddleware {
           }
         }
 
-        req.user = user;
+        req.user = {
+          id: user.id,
+          userId: user.id,
+          walletAddress: user.walletAddress,
+          username: user.username,
+          isBanned: user.isBanned,
+          banExpiresAt: user.banExpiresAt || undefined,
+        };
         next();
       } catch (jwtError) {
         logger.warn('JWT verification failed:', jwtError);
@@ -122,7 +114,14 @@ export class AuthMiddleware {
         });
 
         if (user && (!user.isBanned || (user.banExpiresAt && user.banExpiresAt <= new Date()))) {
-          req.user = user;
+          req.user = {
+            id: user.id,
+            userId: user.id,
+            walletAddress: user.walletAddress,
+            username: user.username,
+            isBanned: user.isBanned,
+            banExpiresAt: user.banExpiresAt || undefined,
+          };
         }
       } catch (jwtError) {
         logger.warn('Optional JWT verification failed:', jwtError);
@@ -205,15 +204,18 @@ export class AuthMiddleware {
 /**
  * Generate JWT token for user
  */
-export const generateToken = (userId: string, walletAddress: string): string => {
-  const payload: JwtPayload = {
+export const generateToken = (userId: string, walletAddress: string, username: string = '', isBanned: boolean = false): string => {
+  const payload: Omit<JwtPayload, 'iat' | 'exp'> = {
+    id: userId,
     userId,
     walletAddress,
+    username,
+    isBanned,
   };
 
   return jwt.sign(payload, config.jwtSecret, {
-    expiresIn: config.jwtExpiresIn,
-  });
+    expiresIn: config.jwtExpiresIn as string,
+  } as jwt.SignOptions);
 };
 
 /**

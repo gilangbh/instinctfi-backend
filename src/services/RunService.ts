@@ -1,10 +1,17 @@
-import { PrismaClient, Run, RunParticipant, Trade, VotingRound, RunStatus, RoundStatus } from '@prisma/client';
+import { PrismaClient, Run, RunParticipant, Trade, VotingRound, RunStatus, RoundStatus, User } from '@prisma/client';
 import { CreateRunRequest, JoinRunRequest, Run as RunType } from '@/types';
 import { AppError } from '@/types';
 import { generateChaosModifiers, calculatePositionSize, calculatePotentialPnL, applyPlatformFee, distributePnL, calculateFinalShare } from '@/utils/chaos';
 import { calculateVoteXp, calculateRunXp } from '@/utils/xp';
 import logger from '@/utils/logger';
 import { config } from '@/utils/config';
+
+// Type for Run with included relations
+type RunWithParticipants = Run & {
+  participants?: (RunParticipant & { user?: User })[];
+  trades?: Trade[];
+  votingRounds?: VotingRound[];
+};
 
 export class RunService {
   constructor(private prisma: PrismaClient) {}
@@ -40,7 +47,7 @@ export class RunService {
   /**
    * Get run by ID
    */
-  async getRunById(id: string): Promise<Run | null> {
+  async getRunById(id: string): Promise<RunWithParticipants | null> {
     try {
       return await this.prisma.run.findUnique({
         where: { id },
@@ -447,7 +454,7 @@ export class RunService {
       });
 
       // Execute trade (mock for now)
-      const entryPrice = votingRound.currentPrice;
+      const entryPrice = Number(votingRound.currentPrice);
       const exitPrice = direction === 'SKIP' ? entryPrice : entryPrice * (1 + (Math.random() - 0.5) * 0.1); // Random price change
       
       const positionSize = calculatePositionSize(run.totalPool, votingRound.positionSize);

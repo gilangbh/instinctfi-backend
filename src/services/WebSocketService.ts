@@ -43,11 +43,11 @@ export class WebSocketService {
 
       // Send welcome message
       this.sendMessage(socketId, {
-        type: WebSocketMessageType.RUN_UPDATE,
+        type: WebSocketMessageType.AUTHENTICATED,
         data: {
           message: 'Connected to Instinct.fi WebSocket',
-          timestamp: new Date(),
         },
+        timestamp: new Date(),
       });
     });
 
@@ -67,7 +67,7 @@ export class WebSocketService {
           this.handleRunUnsubscription(socketId, message.data);
           break;
         case 'PING':
-          this.sendMessage(socketId, { type: 'PONG', data: { timestamp: new Date() } });
+          this.sendMessage(socketId, { type: WebSocketMessageType.PONG, data: {}, timestamp: new Date() });
           break;
         default:
           logger.warn(`Unknown message type: ${message.type}`);
@@ -96,8 +96,9 @@ export class WebSocketService {
     logger.info(`User ${userId} authenticated on socket ${socketId}`);
     
     this.sendMessage(socketId, {
-      type: 'AUTHENTICATED',
-      data: { userId, timestamp: new Date() },
+      type: WebSocketMessageType.AUTHENTICATED,
+      data: { userId },
+      timestamp: new Date(),
     });
   }
 
@@ -118,8 +119,9 @@ export class WebSocketService {
     logger.info(`Socket ${socketId} subscribed to run ${runId}`);
     
     this.sendMessage(socketId, {
-      type: 'SUBSCRIBED',
-      data: { runId, timestamp: new Date() },
+      type: WebSocketMessageType.SUBSCRIBED,
+      data: { runId },
+      timestamp: new Date(),
     });
   }
 
@@ -170,7 +172,8 @@ export class WebSocketService {
   private sendError(socketId: string, error: string): void {
     this.sendMessage(socketId, {
       type: WebSocketMessageType.ERROR,
-      data: { error, timestamp: new Date() },
+      data: { error },
+      timestamp: new Date(),
     });
   }
 

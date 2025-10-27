@@ -1,5 +1,17 @@
 // Core Types for Instinct.fi API
 
+// JWT Payload
+export interface JwtPayload {
+  id: string;
+  userId: string;
+  walletAddress: string;
+  username: string;
+  isBanned: boolean;
+  banExpiresAt?: Date;
+  iat?: number;
+  exp?: number;
+}
+
 // Extend Express Request type
 declare global {
   namespace Express {
@@ -52,6 +64,23 @@ export interface CreateUserRequest {
 export interface UpdateUserRequest {
   username?: string;
   email?: string;
+}
+
+export interface UserStats {
+  totalRuns: number;
+  activeRuns: number;
+  completedRuns: number;
+  totalProfit: number;
+  winRate: number;
+  totalVotes: number;
+  correctVotes: number;
+  consecutiveWins: number;
+  consecutiveParticipation: number;
+  totalXp: number;
+  xp: number;
+  level: number;
+  badges: UserBadge[];
+  rank?: number;
 }
 
 // Badge Types
@@ -225,8 +254,8 @@ export interface WebSocketMessage {
   timestamp: Date;
 }
 
-export interface RunUpdateMessage {
-  type: 'RUN_UPDATE';
+export interface RunUpdateMessage extends WebSocketMessage {
+  type: WebSocketMessageType.RUN_UPDATE;
   data: {
     runId: string;
     status: RunStatus;
@@ -236,8 +265,8 @@ export interface RunUpdateMessage {
   };
 }
 
-export interface VoteUpdateMessage {
-  type: 'VOTE_UPDATE';
+export interface VoteUpdateMessage extends WebSocketMessage {
+  type: WebSocketMessageType.VOTE_UPDATE;
   data: {
     runId: string;
     round: number;
@@ -246,24 +275,24 @@ export interface VoteUpdateMessage {
   };
 }
 
-export interface TradeUpdateMessage {
-  type: 'TRADE_UPDATE';
+export interface TradeUpdateMessage extends WebSocketMessage {
+  type: WebSocketMessageType.TRADE_UPDATE;
   data: {
     runId: string;
     trade: Trade;
   };
 }
 
-export interface ChatMessageUpdateMessage {
-  type: 'CHAT_MESSAGE';
+export interface ChatMessageUpdateMessage extends WebSocketMessage {
+  type: WebSocketMessageType.CHAT_MESSAGE;
   data: {
     runId: string;
     message: ChatMessage;
   };
 }
 
-export interface PriceUpdateMessage {
-  type: 'PRICE_UPDATE';
+export interface PriceUpdateMessage extends WebSocketMessage {
+  type: WebSocketMessageType.PRICE_UPDATE;
   data: {
     symbol: string;
     price: number;
@@ -305,7 +334,10 @@ export enum WebSocketMessageType {
   TRADE_UPDATE = 'TRADE_UPDATE',
   CHAT_MESSAGE = 'CHAT_MESSAGE',
   PRICE_UPDATE = 'PRICE_UPDATE',
-  ERROR = 'ERROR'
+  ERROR = 'ERROR',
+  PONG = 'PONG',
+  AUTHENTICATED = 'AUTHENTICATED',
+  SUBSCRIBED = 'SUBSCRIBED'
 }
 
 // Configuration Types
@@ -369,12 +401,3 @@ export class AppError extends Error {
     Error.captureStackTrace(this, this.constructor);
   }
 }
-
-// JWT Payload
-export interface JwtPayload {
-  userId: string;
-  walletAddress: string;
-  iat?: number;
-  exp?: number;
-}
-

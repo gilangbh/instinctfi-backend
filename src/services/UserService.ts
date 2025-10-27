@@ -153,6 +153,14 @@ export class UserService {
         where: { userId: id },
       });
 
+      // Get user badges
+      const userBadges = await this.prisma.userBadge.findMany({
+        where: { userId: id },
+        include: {
+          badge: true,
+        },
+      });
+
       // Calculate statistics
       const totalRuns = runParticipants.length;
       const winningRuns = runParticipants.filter(p => p.finalShare && p.finalShare > p.depositAmount).length;
@@ -169,12 +177,18 @@ export class UserService {
 
       return {
         totalRuns,
+        activeRuns: 0, // TODO: Calculate active runs
+        completedRuns: totalRuns,
+        totalProfit: 0, // TODO: Calculate total profit from run participants
         winRate,
         totalVotes,
         correctVotes,
         consecutiveWins,
         consecutiveParticipation,
         totalXp: user.xp,
+        xp: user.xp,
+        level: Math.floor(user.xp / 1000), // Simple level calculation
+        badges: userBadges,
       };
     } catch (error) {
       logger.error('Error fetching user stats:', error);

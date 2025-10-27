@@ -88,7 +88,7 @@ export class RunController {
 
       const { runs, total } = await this.runService.getRunHistory(pageNum, limitNum);
 
-      const response: PaginatedResponse = {
+      const response: PaginatedResponse<any> = {
         success: true,
         data: runs,
         pagination: {

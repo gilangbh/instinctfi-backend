@@ -53,7 +53,7 @@ export const voteRateLimit = rateLimit({
   max: 1, // 1 vote per 10 minutes
   keyGenerator: (req: Request) => {
     // Use user ID if authenticated, otherwise IP
-    return req.user?.id || req.ip;
+    return req.user?.id || req.ip || 'anonymous';
   },
   message: {
     success: false,
@@ -77,7 +77,7 @@ export const chatRateLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 10, // 10 messages per minute
   keyGenerator: (req: Request) => {
-    return req.user?.id || req.ip;
+    return req.user?.id || req.ip || 'anonymous';
   },
   message: {
     success: false,
@@ -101,7 +101,7 @@ export const joinRunRateLimit = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutes
   max: 3, // 3 joins per 5 minutes
   keyGenerator: (req: Request) => {
-    return req.user?.id || req.ip;
+    return req.user?.id || req.ip || 'anonymous';
   },
   message: {
     success: false,
@@ -125,7 +125,7 @@ export const createRunRateLimit = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 5, // 5 runs per hour
   keyGenerator: (req: Request) => {
-    return req.user?.id || req.ip;
+    return req.user?.id || req.ip || 'anonymous';
   },
   message: {
     success: false,
