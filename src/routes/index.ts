@@ -8,6 +8,10 @@ import { createUserRoutes } from './userRoutes';
 import { createRunRoutes } from './runRoutes';
 import { createMarketRoutes } from './marketRoutes';
 import { createAuthRoutes } from './authRoutes';
+// Temporarily disabled due to IDL parsing issue
+// import solanaRoutes from './solanaRoutes';
+import driftPriceRoutes from './driftPriceRoutes';
+import driftTradingRoutes from './driftTradingRoutes';
 
 export const createRoutes = (
   userController: UserController,
@@ -33,6 +37,14 @@ export const createRoutes = (
   router.use('/users', createUserRoutes(userController, authMiddleware));
   router.use('/runs', createRunRoutes(runController, authMiddleware));
   router.use('/market', createMarketRoutes(marketController));
+  
+  // Solana routes - temporarily disabled due to IDL parsing issue
+  // TODO: Fix IDL compatibility and re-enable
+  // router.use('/solana', solanaRoutes);
+  
+  // Drift routes
+  router.use('/prices', driftPriceRoutes);
+  router.use('/drift', driftTradingRoutes);
 
   // 404 handler
   router.use('*', (req, res) => {

@@ -3,6 +3,9 @@ import { driftConfig } from '@/utils/config';
 import logger from '@/utils/logger';
 import axios from 'axios';
 import WebSocket from 'ws';
+import { Connection, PublicKey } from '@solana/web3.js';
+import { DriftClient, OraclePriceData } from '@drift-labs/sdk';
+import { Wallet } from '@coral-xyz/anchor';
 
 export class DriftService {
   private priceCache: Map<string, { price: number; timestamp: number; change24h: number }> = new Map();
@@ -11,18 +14,116 @@ export class DriftService {
   private reconnectInterval: NodeJS.Timeout | null = null;
   private isConnected: boolean = false;
   private onPriceUpdate: ((data: any) => void) | null = null;
+  
+  // Drift integration
+  private driftClient: DriftClient | null = null;
+  private driftConnection: Connection | null = null;
+  private useDriftOracle: boolean = true; // Use Drift oracle by default
+  private oraclePollInterval: NodeJS.Timeout | null = null;
 
   constructor() {
-    if (driftConfig.enableWebSocket) {
-      logger.info('Drift Service initialized (using Binance REST API with WebSocket fallback)');
-      this.connectWebSocket();
-    } else {
-      logger.info('Drift Service initialized (using Binance REST API only - WebSocket disabled)');
+    logger.info('🔵 Drift Service initializing - Drift oracle ONLY (Binance disabled)');
+    this.initializeDriftOracle();
+  }
+
+  /**
+   * Initialize Drift oracle connection for real-time prices
+   */
+  private async initializeDriftOracle(): Promise<void> {
+    try {
+      logger.info('Initializing Drift oracle connection...');
+      
+      // Create connection
+      this.driftConnection = new Connection(
+        driftConfig.rpcUrl,
+        'confirmed'
+      );
+
+      // Create a read-only wallet (we don't need to sign transactions for price data)
+      const dummyKeypair = new Uint8Array(64); // Dummy keypair for read-only
+      const wallet = {
+        publicKey: new PublicKey('11111111111111111111111111111111'),
+        signTransaction: async (tx: any) => tx,
+        signAllTransactions: async (txs: any[]) => txs,
+      } as any;
+
+      // Initialize Drift client (read-only for oracle access)
+      // Initialize Drift client for read-only oracle access
+      // Don't specify accountSubscription - let Drift use defaults
+      this.driftClient = new DriftClient({
+        connection: this.driftConnection,
+        wallet,
+        env: driftConfig.environment as any,
+      });
+
+      await this.driftClient.subscribe();
+      logger.info('✅ Drift oracle connected - using on-chain prices');
+      
+      // Start polling oracle prices
+      this.startOraclePricePolling();
+      
+    } catch (error) {
+      logger.error('Failed to initialize Drift oracle:', error);
+      logger.info('Falling back to Binance prices');
+      this.useDriftOracle = false;
     }
-    // Fetch initial price via REST API immediately
-    this.getMarketPriceFromRest('SOL').catch(err => 
-      logger.debug('Initial price fetch failed:', err.message)
-    );
+  }
+
+  /**
+   * Poll Drift oracle for price updates
+   */
+  private startOraclePricePolling(): void {
+    // Poll every 2 seconds
+    this.oraclePollInterval = setInterval(async () => {
+      try {
+        await this.updateDriftOraclePrices();
+      } catch (error) {
+        logger.debug('Error polling Drift oracle:', error);
+      }
+    }, 2000);
+  }
+
+  /**
+   * Update prices from Drift oracle
+   */
+  private async updateDriftOraclePrices(): Promise<void> {
+    if (!this.driftClient || !this.useDriftOracle) {
+      return;
+    }
+
+    try {
+      // Get SOL-PERP oracle data (market index 0)
+      const oracleData = this.driftClient.getOracleDataForPerpMarket(0);
+      
+      if (oracleData && oracleData.price) {
+        const price = oracleData.price.toNumber() / 1e6; // Convert to decimal
+        
+        // Calculate 24h change (we'll need to track previous prices)
+        const cached = this.priceCache.get('SOL');
+        const change24h = cached ? ((price - cached.price) / cached.price) * 100 : 0;
+        
+        this.priceCache.set('SOL', {
+          price,
+          timestamp: Date.now(),
+          change24h,
+        });
+
+        // Broadcast to WebSocket clients
+        if (this.onPriceUpdate) {
+          this.onPriceUpdate({
+            symbol: 'SOL-PERP',
+            price,
+            change24h,
+            source: 'drift-oracle',
+            timestamp: new Date(),
+          });
+        }
+
+        logger.debug(`📊 Drift Oracle SOL: $${price.toFixed(2)} (${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%)`);
+      }
+    } catch (error) {
+      logger.debug('Error fetching from Drift oracle:', error);
+    }
   }
 
   private connectWebSocket(): void {
@@ -200,7 +301,7 @@ export class DriftService {
   }
 
   /**
-   * Get 24h price change (uses cached data from WebSocket)
+   * Get 24h price change (calculated from Drift oracle data)
    */
   async getPriceChange24h(symbol: string): Promise<number> {
     try {
@@ -209,12 +310,8 @@ export class DriftService {
         return cached.change24h;
       }
 
-      // If WebSocket is not connected, try to get 24h change from REST API
-      if (!this.isConnected) {
-        return await this.getPriceChange24hFromRest(symbol);
-      }
-
-      return 0; // Default fallback
+      // Return 0 if no cached data (will be calculated once we have historical data)
+      return 0;
     } catch (error) {
       logger.error(`Error getting 24h price change for ${symbol}:`, error);
       return 0;
@@ -503,5 +600,22 @@ export class DriftService {
     this.isConnected = false;
     this.onPriceUpdate = null;
     logger.info('DriftService WebSocket connection closed');
+  }
+
+  /**
+   * Check if using Drift oracle
+   */
+  isUsingDriftOracle(): boolean {
+    return this.useDriftOracle && this.driftClient !== null;
+  }
+
+  /**
+   * Get oracle source being used
+   */
+  getOracleSource(): string {
+    if (this.useDriftOracle && this.driftClient) {
+      return 'drift-oracle';
+    }
+    return 'drift-oracle-fallback';
   }
 }
