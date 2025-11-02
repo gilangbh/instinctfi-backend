@@ -27,17 +27,39 @@ export const config: AppConfig = {
 };
 
 export const driftConfig = {
-  rpcUrl: process.env.DRIFT_RPC_URL || 'https://drift-api.example.com',
-  apiKey: process.env.DRIFT_API_KEY || 'your-drift-api-key',
+  // RPC URL for Drift operations (can use same as Solana RPC)
+  rpcUrl: process.env.DRIFT_RPC_URL || process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com',
+  
+  // Drift environment: 'mainnet-beta' | 'devnet'
+  environment: process.env.DRIFT_ENVIRONMENT || 'mainnet-beta',
+  
+  // Trading keypair for Drift operations (JSON array format)
+  tradingKeypair: process.env.DRIFT_TRADING_KEYPAIR || process.env.SOLANA_PRIVATE_KEY || '',
+  
+  // Default market for trading
+  defaultMarket: process.env.DRIFT_DEFAULT_MARKET || 'SOL-PERP',
+  
+  // Enable real trading (set to 'false' to use mock mode)
+  enableRealTrading: process.env.DRIFT_ENABLE_REAL_TRADING === 'true',
+  
+  // Enable WebSocket for price feeds
+  enableWebSocket: process.env.ENABLE_PRICE_WEBSOCKET !== 'false',
+  
+  // Drift program ID (usually doesn't need to change)
   programId: process.env.DRIFT_PROGRAM_ID || 'dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH',
-  marketId: process.env.DRIFT_MARKET_ID || 'SOL-PERP',
-  enableWebSocket: process.env.ENABLE_PRICE_WEBSOCKET !== 'false', // Set to 'false' to disable WebSocket
+  
+  // Trading limits
+  maxLeveragePerTrade: parseInt(process.env.DRIFT_MAX_LEVERAGE || '10', 10),
+  maxPositionSizeUsd: parseInt(process.env.DRIFT_MAX_POSITION_SIZE_USD || '10000', 10),
 };
 
 export const solanaConfig = {
-  rpcUrl: process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com',
-  wsUrl: process.env.SOLANA_WS_URL || 'wss://api.mainnet-beta.solana.com',
+  rpcUrl: process.env.SOLANA_RPC_URL || 'https://api.devnet.solana.com',
+  wsUrl: process.env.SOLANA_WS_URL || 'wss://api.devnet.solana.com',
+  network: process.env.SOLANA_NETWORK || 'devnet',
   privateKey: process.env.SOLANA_PRIVATE_KEY || '',
+  programId: process.env.SOLANA_PROGRAM_ID || '7gmTYKqNX4xKsrd6NfNRscL3XSUoUTQyyTPhySWoABUc',
+  usdcMint: process.env.SOLANA_USDC_MINT || 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // Devnet USDC
 };
 
 export const redisConfig = {

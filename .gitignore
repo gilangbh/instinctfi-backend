@@ -112,3 +112,12 @@ prisma/migrations/
 tmp/
 temp/
 
+
+# Keypairs - never commit!
+*-keypair.json
+drift-trading-keypair.json
+backend-keypair.json
+*.json.bak
+.env.production
+.env.local
+
