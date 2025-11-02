@@ -73,7 +73,7 @@ export class DriftTradingController {
         reduceOnly: reduceOnly || false,
       });
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         mode: 'real',
         message: 'Real trade executed on Drift Protocol',
