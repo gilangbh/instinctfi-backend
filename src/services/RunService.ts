@@ -66,20 +66,14 @@ export class RunService {
             data.maxParticipants || config.maxParticipantsPerRun
           );
 
-          // Create vault for the run
-          const vaultTx = await this.solanaService.createRunVault(runNumericId);
+        // Create vault for the run
+        const vaultTx = await this.solanaService.createRunVault(runNumericId);
 
-          // Update run with blockchain transaction info
-          await this.prisma.run.update({
-            where: { id: run.id },
-            data: {
-              blockchainTxHash: createTx, // Store creation transaction
-            },
-          });
-
-          logger.info(`Run created: ${run.id} (${run.tradingPair})`);
-          logger.info(`On-chain TX: ${getExplorerUrl(createTx)}`);
-          logger.info(`Vault TX: ${getExplorerUrl(vaultTx)}`);
+        // Log blockchain transaction info (blockchainTxHash field doesn't exist in schema yet)
+        logger.info(`✅ Run created: ${run.id} (${run.tradingPair})`);
+        logger.info(`   Run PDA derived for ID: ${runNumericId}`);
+        logger.info(`   Create TX: ${createTx}`);
+        logger.info(`   Vault TX: ${vaultTx}`);
         } catch (solanaError) {
           // If blockchain creation fails, we should handle it
           logger.error('Failed to create run on-chain, but DB entry created:', solanaError);

@@ -26,7 +26,7 @@
   "author": "Instinct.fi Team",
   "license": "MIT",
   "dependencies": {
-    "@coral-xyz/anchor": "^0.32.1",
+    "@coral-xyz/anchor": "^0.30.1",
     "@drift-labs/sdk": "^2.144.0-beta.1",
     "@prisma/client": "^5.7.1",
     "@solana/spl-token": "^0.4.14",

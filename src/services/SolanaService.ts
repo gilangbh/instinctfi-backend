@@ -1,9 +1,15 @@
-import { Connection, Keypair, PublicKey, Transaction } from '@solana/web3.js';
-import { AnchorProvider, Program, Wallet, BN } from '@coral-xyz/anchor';
-import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { 
+  Connection, 
+  Keypair, 
+  PublicKey, 
+  Transaction,
+  SystemProgram,
+  TransactionInstruction
+} from '@solana/web3.js';
+import { AnchorProvider, Wallet, BN } from '@coral-xyz/anchor';
+import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { solanaConfig } from '@/utils/config';
 import logger from '@/utils/logger';
-import idl from '../idl/instinct_trading.json';
 import { AppError } from '@/types';
 
 // ParticipantShare type for settle_run instruction
@@ -43,7 +49,6 @@ export class SolanaService {
   private connection: Connection;
   private wallet: Wallet;
   private provider: AnchorProvider;
-  private program: Program;
   private programId: PublicKey;
   private usdcMint: PublicKey;
 
@@ -77,53 +82,11 @@ export class SolanaService {
     this.programId = new PublicKey(solanaConfig.programId);
     this.usdcMint = new PublicKey(solanaConfig.usdcMint);
 
-    // Initialize the program with proper IDL typing
-    try {
-      // Convert new IDL format to old Anchor format
-      // The IDL from Anchor 0.32 needs to be converted for @coral-xyz/anchor compatibility
-      const anchorIdl: any = {
-        version: idl.metadata?.version || "0.1.0",
-        name: idl.metadata?.name || "instinct_trading",
-        instructions: idl.instructions?.map((ix: any) => ({
-          name: ix.name,
-          accounts: ix.accounts || [],
-          args: ix.args || [],
-        })) || [],
-        accounts: idl.accounts?.map((acc: any) => ({
-          name: acc.name,
-          type: {
-            kind: "struct",
-            fields: []
-          }
-        })) || [],
-        types: idl.types?.map((type: any) => ({
-          name: type.name,
-          type: type.type || { kind: "struct", fields: [] }
-        })) || [],
-        errors: idl.errors || [],
-        metadata: {
-          address: this.programId.toString()
-        }
-      };
-      
-      this.program = new Program(anchorIdl, this.programId, this.provider);
-      logger.info(`SolanaService initialized - Program: ${this.programId.toString()}`);
-      logger.info(`Authority wallet: ${this.wallet.publicKey.toString()}`);
-    } catch (error) {
-      logger.error('Failed to initialize Anchor program:', error);
-      logger.error('This is likely due to IDL format incompatibility');
-      logger.warn('⚠️  SolanaService will operate in limited mode');
-      // Create a minimal program interface for basic operations
-      const minimalIdl: any = {
-        version: "0.1.0",
-        name: "instinct_trading",
-        instructions: [],
-        accounts: [],
-        types: [],
-        errors: [],
-      };
-      this.program = new Program(minimalIdl, this.programId, this.provider);
-    }
+    logger.info(`✅ SolanaService initialized successfully!`);
+    logger.info(`   Program ID: ${this.programId.toString()}`);
+    logger.info(`   Authority: ${this.wallet.publicKey.toString()}`);
+    logger.info(`   Network: ${solanaConfig.network}`);
+    logger.info(`   Mode: Manual transaction building (Anchor IDL disabled)`);
   }
 
   /**
@@ -212,7 +175,7 @@ export class SolanaService {
    */
   async createRun(
     runId: number,
-    minDeposit: number, // in USDC (will be converted to smallest unit)
+    minDeposit: number,
     maxDeposit: number,
     maxParticipants: number
   ): Promise<string> {
@@ -224,24 +187,51 @@ export class SolanaService {
       const minDepositLamports = new BN(minDeposit * 1_000_000);
       const maxDepositLamports = new BN(maxDeposit * 1_000_000);
 
-      const tx = await this.program.methods
-        .createRun(
-          new BN(runId),
-          minDepositLamports,
-          maxDepositLamports,
-          maxParticipants
-        )
-        .accounts({
-          platform: platformPDA,
-          run: runPDA,
-          authority: this.wallet.publicKey,
-        })
-        .rpc();
+      // Build instruction data manually (8-byte discriminator + arguments)
+      // Discriminator for create_run: [195,241,245,139,101,109,209,237]
+      const discriminator = Buffer.from([195, 241, 245, 139, 101, 109, 209, 237]);
+      
+      // Encode arguments
+      const runIdBuf = Buffer.alloc(8);
+      new BN(runId).toArrayLike(Buffer, 'le', 8).copy(runIdBuf);
+      
+      const minDepositBuf = Buffer.alloc(8);
+      minDepositLamports.toArrayLike(Buffer, 'le', 8).copy(minDepositBuf);
+      
+      const maxDepositBuf = Buffer.alloc(8);
+      maxDepositLamports.toArrayLike(Buffer, 'le', 8).copy(maxDepositBuf);
+      
+      const maxParticipantsBuf = Buffer.alloc(2);
+      maxParticipantsBuf.writeUInt16LE(maxParticipants, 0);
+      
+      const data = Buffer.concat([
+        discriminator,
+        runIdBuf,
+        minDepositBuf,
+        maxDepositBuf,
+        maxParticipantsBuf,
+      ]);
 
-      logger.info(`Run created on-chain: Run ID ${runId}, TX: ${tx}`);
-      return tx;
+      // Build transaction
+      const instruction = new TransactionInstruction({
+        keys: [
+          { pubkey: platformPDA, isSigner: false, isWritable: true },
+          { pubkey: runPDA, isSigner: false, isWritable: true },
+          { pubkey: this.wallet.publicKey, isSigner: true, isWritable: true },
+          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        ],
+        programId: this.programId,
+        data,
+      });
+
+      const tx = new Transaction().add(instruction);
+      const signature = await this.provider.sendAndConfirm(tx);
+
+      logger.info(`✅ Run created on-chain: Run ID ${runId}, TX: ${signature}`);
+      logger.info(`   Run PDA: ${runPDA.toString()}`);
+      return signature;
     } catch (error) {
-      logger.error('Error creating run:', error);
+      logger.error('Error creating run on-chain:', error);
       throw new AppError('Failed to create run on-chain', 500);
     }
   }
@@ -254,19 +244,34 @@ export class SolanaService {
       const [runPDA] = this.getRunPDA(runId);
       const [runVaultPDA] = this.getRunVaultPDA(runId);
 
-      const tx = await this.program.methods
-        .createRunVault(new BN(runId))
-        .accounts({
-          run: runPDA,
-          runVault: runVaultPDA,
-          usdcMint: this.usdcMint,
-          payer: this.wallet.publicKey,
-          tokenProgram: TOKEN_PROGRAM_ID,
-        })
-        .rpc();
+      // Build instruction for create_run_vault
+      // Discriminator: [17,101,136,210,255,95,202,141]
+      const discriminator = Buffer.from([17, 101, 136, 210, 255, 95, 202, 141]);
+      
+      const runIdBuf = Buffer.alloc(8);
+      new BN(runId).toArrayLike(Buffer, 'le', 8).copy(runIdBuf);
+      
+      const data = Buffer.concat([discriminator, runIdBuf]);
 
-      logger.info(`Run vault created: Run ID ${runId}, TX: ${tx}`);
-      return tx;
+      const instruction = new TransactionInstruction({
+        keys: [
+          { pubkey: runPDA, isSigner: false, isWritable: false },
+          { pubkey: runVaultPDA, isSigner: false, isWritable: true },
+          { pubkey: this.usdcMint, isSigner: false, isWritable: false },
+          { pubkey: this.wallet.publicKey, isSigner: true, isWritable: true },
+          { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        ],
+        programId: this.programId,
+        data,
+      });
+
+      const tx = new Transaction().add(instruction);
+      const signature = await this.provider.sendAndConfirm(tx);
+
+      logger.info(`✅ Run vault created on-chain: Run ID ${runId}, TX: ${signature}`);
+      logger.info(`   Vault PDA: ${runVaultPDA.toString()}`);
+      return signature;
     } catch (error) {
       logger.error('Error creating run vault:', error);
       throw new AppError('Failed to create run vault', 500);
