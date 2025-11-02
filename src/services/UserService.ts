@@ -84,7 +84,7 @@ export class UserService {
       };
 
       const token = jwt.sign(payload, config.jwtSecret, {
-        expiresIn: config.jwtExpiresIn,
+        expiresIn: config.jwtExpiresIn as string | number,
       });
 
       logger.info(`JWT token generated for user ${userId}`);

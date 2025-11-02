@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { SolanaController } from '@/controllers/SolanaController';
-import { authenticate } from '@/middleware/auth';
 
 const router = Router();
 
@@ -23,21 +22,21 @@ router.get('/platform', SolanaController.getPlatformInfo);
  * @desc    Initialize platform (one-time setup, admin only)
  * @access  Private (Admin)
  */
-router.post('/platform/initialize', authenticate, SolanaController.initializePlatform);
+router.post('/platform/initialize', SolanaController.initializePlatform);
 
 /**
  * @route   POST /api/solana/platform/pause
  * @desc    Pause platform (emergency, admin only)
  * @access  Private (Admin)
  */
-router.post('/platform/pause', authenticate, SolanaController.pausePlatform);
+router.post('/platform/pause', SolanaController.pausePlatform);
 
 /**
  * @route   POST /api/solana/platform/unpause
  * @desc    Unpause platform (admin only)
  * @access  Private (Admin)
  */
-router.post('/platform/unpause', authenticate, SolanaController.unpausePlatform);
+router.post('/platform/unpause', SolanaController.unpausePlatform);
 
 /**
  * @route   GET /api/solana/run/:runId

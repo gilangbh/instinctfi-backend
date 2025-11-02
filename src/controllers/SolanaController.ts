@@ -101,7 +101,7 @@ export class SolanaController {
         });
       }
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         data: {
           runId: runData.runId.toString(),
@@ -122,7 +122,7 @@ export class SolanaController {
       });
     } catch (error) {
       logger.error('Error fetching run info:', error);
-      res.status(500).json({
+      return res.status(500).json({
         success: false,
         message: 'Failed to fetch run info',
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -151,7 +151,7 @@ export class SolanaController {
       const [runVaultPDA, vaultBump] = solanaService.getRunVaultPDA(runNumericId);
       const [platformFeeVaultPDA, feeVaultBump] = solanaService.getPlatformFeeVaultPDA();
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         data: {
           platform: {
@@ -178,7 +178,7 @@ export class SolanaController {
       });
     } catch (error) {
       logger.error('Error getting run PDAs:', error);
-      res.status(500).json({
+      return res.status(500).json({
         success: false,
         message: 'Failed to get run PDAs',
         error: error instanceof Error ? error.message : 'Unknown error',

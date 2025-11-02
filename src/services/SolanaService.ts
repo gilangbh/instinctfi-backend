@@ -145,29 +145,10 @@ export class SolanaService {
 
   /**
    * Initialize platform (one-time setup)
+   * NOTE: Use scripts/init-platform.js instead - this method is disabled due to IDL issues
    */
   async initializePlatform(platformFeeBps: number = 150): Promise<string> {
-    try {
-      const [platformPDA] = this.getPlatformPDA();
-      const [platformFeeVaultPDA] = this.getPlatformFeeVaultPDA();
-
-      const tx = await this.program.methods
-        .initializePlatform(platformFeeBps)
-        .accounts({
-          platform: platformPDA,
-          platformFeeVault: platformFeeVaultPDA,
-          usdcMint: this.usdcMint,
-          authority: this.wallet.publicKey,
-          tokenProgram: TOKEN_PROGRAM_ID,
-        })
-        .rpc();
-
-      logger.info(`Platform initialized: ${tx}`);
-      return tx;
-    } catch (error) {
-      logger.error('Error initializing platform:', error);
-      throw new AppError('Failed to initialize platform', 500);
-    }
+    throw new AppError('Use scripts/init-platform.js for platform initialization', 501);
   }
 
   /**
@@ -280,72 +261,27 @@ export class SolanaService {
 
   /**
    * Start a run
+   * NOTE: Not currently used - manual transaction building would be needed
    */
   async startRun(runId: number): Promise<string> {
-    try {
-      const [platformPDA] = this.getPlatformPDA();
-      const [runPDA] = this.getRunPDA(runId);
-
-      const tx = await this.program.methods
-        .startRun(new BN(runId))
-        .accounts({
-          platform: platformPDA,
-          run: runPDA,
-          authority: this.wallet.publicKey,
-        })
-        .rpc();
-
-      logger.info(`Run started on-chain: Run ID ${runId}, TX: ${tx}`);
-      return tx;
-    } catch (error) {
-      logger.error('Error starting run:', error);
-      throw new AppError('Failed to start run on-chain', 500);
-    }
+    throw new AppError('startRun not implemented with manual transactions', 501);
   }
 
   /**
    * Settle a run with final P/L
+   * NOTE: Not implemented with manual transactions
    */
   async settleRun(
     runId: number,
-    finalBalance: number, // in USDC
+    finalBalance: number,
     participantShares: Array<{ userPubkey: string; shareAmount: number }>
   ): Promise<string> {
-    try {
-      const [platformPDA] = this.getPlatformPDA();
-      const [runPDA] = this.getRunPDA(runId);
-      const [runVaultPDA] = this.getRunVaultPDA(runId);
-      const [platformFeeVaultPDA] = this.getPlatformFeeVaultPDA();
-
-      // Convert to smallest units
-      const finalBalanceLamports = new BN(finalBalance * 1_000_000);
-      const shares = participantShares.map(s => ({
-        user: new PublicKey(s.userPubkey),
-        shareAmount: new BN(s.shareAmount * 1_000_000),
-      }));
-
-      const tx = await this.program.methods
-        .settleRun(new BN(runId), finalBalanceLamports, shares)
-        .accounts({
-          platform: platformPDA,
-          run: runPDA,
-          runVault: runVaultPDA,
-          platformFeeVault: platformFeeVaultPDA,
-          authority: this.wallet.publicKey,
-          tokenProgram: TOKEN_PROGRAM_ID,
-        })
-        .rpc();
-
-      logger.info(`Run settled on-chain: Run ID ${runId}, TX: ${tx}`);
-      return tx;
-    } catch (error) {
-      logger.error('Error settling run:', error);
-      throw new AppError('Failed to settle run on-chain', 500);
-    }
+    throw new AppError('settleRun not implemented with manual transactions', 501);
   }
 
   /**
    * Update vote statistics for a user
+   * NOTE: Not implemented with manual transactions
    */
   async updateVoteStats(
     runId: number,
@@ -353,107 +289,41 @@ export class SolanaService {
     correctVotes: number,
     totalVotes: number
   ): Promise<string> {
-    try {
-      const [platformPDA] = this.getPlatformPDA();
-      const [runPDA] = this.getRunPDA(runId);
-      const userKey = new PublicKey(userPubkey);
-      const [userParticipationPDA] = this.getUserParticipationPDA(runId, userKey);
-
-      const tx = await this.program.methods
-        .updateVoteStats(
-          new BN(runId),
-          userKey,
-          correctVotes,
-          totalVotes
-        )
-        .accounts({
-          platform: platformPDA,
-          run: runPDA,
-          userParticipation: userParticipationPDA,
-          authority: this.wallet.publicKey,
-        })
-        .rpc();
-
-      logger.info(`Vote stats updated: Run ID ${runId}, User ${userPubkey}, TX: ${tx}`);
-      return tx;
-    } catch (error) {
-      logger.error('Error updating vote stats:', error);
-      throw new AppError('Failed to update vote stats', 500);
-    }
+    throw new AppError('updateVoteStats not implemented with manual transactions', 501);
   }
 
   /**
    * Fetch run data from on-chain
+   * NOTE: Not implemented - use Solana RPC getAccountInfo instead
    */
   async fetchRun(runId: number): Promise<RunData | null> {
-    try {
-      const [runPDA] = this.getRunPDA(runId);
-      const runAccount = await this.program.account.run.fetch(runPDA);
-      return runAccount as unknown as RunData;
-    } catch (error) {
-      logger.error('Error fetching run:', error);
-      return null;
-    }
+    logger.warn('fetchRun not implemented - use Solana Explorer to view run data');
+    return null;
   }
 
   /**
    * Fetch platform data from on-chain
+   * NOTE: Not implemented - use Solana RPC getAccountInfo instead
    */
   async fetchPlatform(): Promise<any> {
-    try {
-      const [platformPDA] = this.getPlatformPDA();
-      const platformAccount = await this.program.account.platform.fetch(platformPDA);
-      return platformAccount;
-    } catch (error) {
-      logger.error('Error fetching platform:', error);
-      return null;
-    }
+    logger.warn('fetchPlatform not implemented - use Solana Explorer to view platform data');
+    return null;
   }
 
   /**
    * Pause platform (emergency)
+   * NOTE: Not implemented with manual transactions
    */
   async pausePlatform(): Promise<string> {
-    try {
-      const [platformPDA] = this.getPlatformPDA();
-
-      const tx = await this.program.methods
-        .pausePlatform()
-        .accounts({
-          platform: platformPDA,
-          authority: this.wallet.publicKey,
-        })
-        .rpc();
-
-      logger.info(`Platform paused: ${tx}`);
-      return tx;
-    } catch (error) {
-      logger.error('Error pausing platform:', error);
-      throw new AppError('Failed to pause platform', 500);
-    }
+    throw new AppError('pausePlatform not implemented with manual transactions', 501);
   }
 
   /**
    * Unpause platform
+   * NOTE: Not implemented with manual transactions
    */
   async unpausePlatform(): Promise<string> {
-    try {
-      const [platformPDA] = this.getPlatformPDA();
-
-      const tx = await this.program.methods
-        .unpausePlatform()
-        .accounts({
-          platform: platformPDA,
-          authority: this.wallet.publicKey,
-        })
-        .rpc();
-
-      logger.info(`Platform unpaused: ${tx}`);
-      return tx;
-    } catch (error) {
-      logger.error('Error unpausing platform:', error);
-      throw new AppError('Failed to unpause platform', 500);
-    }
+    throw new AppError('unpausePlatform not implemented with manual transactions', 501);
   }
 
   /**
