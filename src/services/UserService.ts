@@ -3,7 +3,7 @@ import { CreateUserRequest, UpdateUserRequest, UserStats } from '@/types';
 import { AppError } from '@/types';
 import { checkNewBadges, getXpLevel, getXpForNextLevel, getXpProgress } from '@/utils/xp';
 import logger from '@/utils/logger';
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
 import { config } from '@/utils/config';
 
 export class UserService {
@@ -84,7 +84,7 @@ export class UserService {
       };
 
       const token = jwt.sign(payload, config.jwtSecret, {
-        expiresIn: config.jwtExpiresIn as string | number,
+        expiresIn: config.jwtExpiresIn as jwt.SignOptions['expiresIn'],
       });
 
       logger.info(`JWT token generated for user ${userId}`);
