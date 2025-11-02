@@ -60,10 +60,10 @@ export class DriftIntegrationService {
       } else {
         // Execute mock trade
         const mockResult = await this.mockDriftService.executeTrade({
-          marketSymbol: params.marketSymbol,
           direction: params.direction,
           positionSize: params.baseAmount,
           leverage: params.leverage || 1,
+          slippage: 0.01, // 1% default slippage for mock
         });
 
         return mockResult;
