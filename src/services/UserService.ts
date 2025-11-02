@@ -3,6 +3,8 @@ import { CreateUserRequest, UpdateUserRequest, UserStats } from '@/types';
 import { AppError } from '@/types';
 import { checkNewBadges, getXpLevel, getXpForNextLevel, getXpProgress } from '@/utils/xp';
 import logger from '@/utils/logger';
+import jwt from 'jsonwebtoken';
+import { config } from '@/utils/config';
 
 export class UserService {
   constructor(private prisma: PrismaClient) {}
@@ -67,6 +69,28 @@ export class UserService {
       });
     } catch (error) {
       logger.error('Error fetching user by wallet address:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate JWT authentication token for user
+   */
+  async generateAuthToken(userId: string): Promise<string> {
+    try {
+      const payload = {
+        userId,
+        iat: Math.floor(Date.now() / 1000),
+      };
+
+      const token = jwt.sign(payload, config.jwtSecret, {
+        expiresIn: config.jwtExpiresIn,
+      });
+
+      logger.info(`JWT token generated for user ${userId}`);
+      return token;
+    } catch (error) {
+      logger.error('Error generating auth token:', error);
       throw error;
     }
   }

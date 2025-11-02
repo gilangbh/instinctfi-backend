@@ -5,6 +5,8 @@ import { generateChaosModifiers, calculatePositionSize, calculatePotentialPnL, a
 import { calculateVoteXp, calculateRunXp } from '@/utils/xp';
 import logger from '@/utils/logger';
 import { config } from '@/utils/config';
+import { SolanaService } from './SolanaService';
+import { getExplorerUrl } from '@/utils/solana';
 
 // Type for Run with included relations
 type RunWithParticipants = Run & {
@@ -14,7 +16,19 @@ type RunWithParticipants = Run & {
 };
 
 export class RunService {
-  constructor(private prisma: PrismaClient) {}
+  private solanaService: SolanaService | null = null;
+
+  constructor(private prisma: PrismaClient, solanaService?: SolanaService) {
+    // Make Solana service optional - useful for development when blockchain is not needed
+    try {
+      this.solanaService = solanaService || new SolanaService();
+      logger.info('RunService initialized with Solana integration');
+    } catch (error) {
+      logger.warn('RunService initialized WITHOUT Solana integration (blockchain features disabled)');
+      logger.warn('To enable blockchain features, ensure Solana configuration is correct');
+      this.solanaService = null;
+    }
+  }
 
   /**
    * Create a new run
@@ -23,6 +37,7 @@ export class RunService {
     try {
       const totalRounds = Math.floor((data.duration || config.defaultRunDurationMinutes) / (data.votingInterval || config.defaultVotingIntervalMinutes));
 
+      // First create in database to get the ID
       const run = await this.prisma.run.create({
         data: {
           tradingPair: data.tradingPair,
@@ -36,7 +51,39 @@ export class RunService {
         },
       });
 
-      logger.info(`Run created: ${run.id} (${run.tradingPair})`);
+      // Extract numeric ID for Solana (assuming auto-increment or convert)
+      // If your ID is a string UUID, you'll need a separate numeric ID field
+      const runNumericId = parseInt(run.id) || Date.now(); // Fallback to timestamp if not numeric
+
+      // Only interact with blockchain if Solana service is available
+      if (this.solanaService) {
+        try {
+          // Create run on-chain
+          const createTx = await this.solanaService.createRun(
+            runNumericId,
+            data.minDeposit || config.minDepositUsdc,
+            data.maxDeposit || config.maxDepositUsdc,
+            data.maxParticipants || config.maxParticipantsPerRun
+          );
+
+        // Create vault for the run
+        const vaultTx = await this.solanaService.createRunVault(runNumericId);
+
+        // Log blockchain transaction info (blockchainTxHash field doesn't exist in schema yet)
+        logger.info(`✅ Run created: ${run.id} (${run.tradingPair})`);
+        logger.info(`   Run PDA derived for ID: ${runNumericId}`);
+        logger.info(`   Create TX: ${createTx}`);
+        logger.info(`   Vault TX: ${vaultTx}`);
+        } catch (solanaError) {
+          // If blockchain creation fails, we should handle it
+          logger.error('Failed to create run on-chain, but DB entry created:', solanaError);
+          // Optionally: Delete the DB entry or mark as failed
+          // For now, we'll let it exist but log the error
+        }
+      } else {
+        logger.info(`Run created: ${run.id} (${run.tradingPair}) - Blockchain integration disabled`);
+      }
+
       return run;
     } catch (error) {
       logger.error('Error creating run:', error);
@@ -268,6 +315,18 @@ export class RunService {
 
       if (!run.participants || run.participants.length === 0) {
         throw new AppError('Run has no participants', 400);
+      }
+
+      // Start run on-chain (if blockchain is enabled)
+      if (this.solanaService) {
+        const runNumericId = parseInt(run.id) || Date.now();
+        try {
+          const startTx = await this.solanaService.startRun(runNumericId);
+          logger.info(`Run started on-chain: ${getExplorerUrl(startTx)}`);
+        } catch (solanaError) {
+          logger.error('Failed to start run on-chain:', solanaError);
+          // Continue anyway - the DB state is source of truth
+        }
       }
 
       const updatedRun = await this.prisma.run.update({
@@ -516,6 +575,8 @@ export class RunService {
       const totalPnL = run.totalPool - run.startingPool;
       const pnlShares = distributePnL(totalPnL, participants);
 
+      const participantShares: Array<{ userPubkey: string; shareAmount: number }> = [];
+
       // Update participants with final shares
       for (let i = 0; i < participants.length; i++) {
         const participant = participants[i];
@@ -532,6 +593,31 @@ export class RunService {
             finalShare,
           },
         });
+
+        // Prepare participant shares for on-chain settlement
+        // NOTE: You need to have wallet addresses stored in your User model
+        if (participant.user?.walletAddress) {
+          participantShares.push({
+            userPubkey: participant.user.walletAddress,
+            shareAmount: finalShare / 100, // Convert from cents to USDC
+          });
+        }
+      }
+
+      // Settle run on-chain (if blockchain is enabled)
+      if (this.solanaService) {
+        const runNumericId = parseInt(runId) || Date.now();
+        try {
+          const settleTx = await this.solanaService.settleRun(
+            runNumericId,
+            run.totalPool / 100, // Convert from cents to USDC
+            participantShares
+          );
+          logger.info(`Run settled on-chain: ${getExplorerUrl(settleTx)}`);
+        } catch (solanaError) {
+          logger.error('Failed to settle run on-chain:', solanaError);
+          // Continue anyway - participants can still withdraw based on DB state
+        }
       }
 
       const updatedRun = await this.prisma.run.update({

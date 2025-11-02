@@ -39,7 +39,13 @@ export class AuthController {
       // Verify signature
       try {
         const messageBytes = new TextEncoder().encode(message);
-        const signatureBytes = bs58.decode(signature);
+        // Support both base64 and bs58 signatures
+        let signatureBytes;
+        try {
+          signatureBytes = bs58.decode(signature);
+        } catch (e) {
+          signatureBytes = Buffer.from(signature, 'base64');
+        }
         const publicKeyBytes = publicKey.toBytes();
 
         const isValid = nacl.sign.detached.verify(
@@ -89,13 +95,54 @@ export class AuthController {
         }
       }
 
+      // Generate JWT token for the user
+      const token = await this.userService.generateAuthToken(user.id);
+
       res.status(200).json({
         success: true,
-        data: user,
+        data: {
+          user,
+          token,
+        },
         message: 'Wallet verified successfully',
       });
     } catch (error) {
       logger.error('Error in verifyWallet:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+      });
+    }
+  };
+
+  /**
+   * Get nonce/challenge for wallet to sign
+   */
+  getNonce = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { walletAddress } = req.query;
+
+      if (!walletAddress) {
+        res.status(400).json({
+          success: false,
+          error: 'walletAddress is required',
+        });
+        return;
+      }
+
+      // Generate a unique nonce message for the wallet to sign
+      const timestamp = Date.now();
+      const message = `Sign this message to authenticate with Instinct.fi\n\nWallet: ${walletAddress}\nTimestamp: ${timestamp}\n\nThis signature will not trigger any blockchain transaction or cost any gas fees.`;
+
+      res.status(200).json({
+        success: true,
+        data: {
+          message,
+          timestamp,
+        },
+      });
+    } catch (error) {
+      logger.error('Error in getNonce:', error);
       res.status(500).json({
         success: false,
         error: 'Internal server error',
