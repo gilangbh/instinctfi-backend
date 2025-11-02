@@ -85,7 +85,7 @@ export class DriftTradingController {
 
     } catch (error) {
       logger.error('Error placing perp order:', error);
-      res.status(500).json({
+      return res.status(500).json({
         success: false,
         message: 'Failed to place perp order',
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -123,7 +123,7 @@ export class DriftTradingController {
       
       const result = await driftService.closePosition(marketSymbol);
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         mode: 'real',
         message: 'Position closed on Drift',
@@ -135,7 +135,7 @@ export class DriftTradingController {
 
     } catch (error) {
       logger.error('Error closing position:', error);
-      res.status(500).json({
+      return res.status(500).json({
         success: false,
         message: 'Failed to close position',
         error: error instanceof Error ? error.message : 'Unknown error',
