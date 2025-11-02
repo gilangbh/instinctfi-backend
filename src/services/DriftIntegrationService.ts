@@ -60,7 +60,7 @@ export class DriftIntegrationService {
       } else {
         // Execute mock trade
         const mockResult = await this.mockDriftService.executeTrade({
-          symbol: params.marketSymbol,
+          marketSymbol: params.marketSymbol,
           direction: params.direction,
           positionSize: params.baseAmount,
           leverage: params.leverage || 1,
