@@ -184,16 +184,23 @@ class App {
       
       this.app.use(`/api/${config.apiVersion}`, routes);
 
-      // Root endpoint
-      this.app.get('/', (req, res) => {
-        res.json({
-          success: true,
-          message: 'Welcome to Instinct.fi API',
-          version: config.apiVersion,
-          documentation: `/api/${config.apiVersion}/docs`,
-          health: `/api/${config.apiVersion}/health`,
-        });
+    // Root endpoint
+    this.app.get('/', (req, res) => {
+      console.log('📥 Received request to /');
+      res.json({
+        success: true,
+        message: 'Welcome to Instinct.fi API',
+        version: config.apiVersion,
+        documentation: `/api/${config.apiVersion}/docs`,
+        health: `/api/${config.apiVersion}/health`,
       });
+    });
+    
+    // Simple health check for Railway
+    this.app.get('/health', (req, res) => {
+      console.log('📥 Health check received');
+      res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+    });
 
       // WebSocket status endpoint
       this.app.get(`/api/${config.apiVersion}/ws/status`, (req, res) => {
