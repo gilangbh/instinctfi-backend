@@ -245,23 +245,34 @@ class App {
 
   public async start(): Promise<void> {
     try {
+      console.log('📍 start() method called');
+      
       // Connect to database
+      console.log('Connecting to database...');
       await this.prisma.$connect();
+      console.log('✅ Database connected');
       logger.info('Connected to database');
 
       // Start HTTP server
+      console.log(`Starting HTTP server on port ${config.port}...`);
       const server = this.app.listen(config.port, () => {
+        console.log(`✅ HTTP server listening on port ${config.port}`);
         logger.info(`HTTP server running on port ${config.port}`);
         logger.info(`Environment: ${config.nodeEnv}`);
         logger.info(`API Version: ${config.apiVersion}`);
       });
+      console.log('✅ Server listen() called');
 
       // Start WebSocket server
+      console.log('Starting WebSocket server...');
       this.wsServer.start(server);
+      console.log('✅ WebSocket started');
       logger.info(`WebSocket server running on port ${config.port}`);
 
       // Start price monitoring service
+      console.log('Starting price monitoring...');
       this.priceService.start();
+      console.log('✅ Price monitoring started');
       logger.info('Price monitoring service started');
 
       // Graceful shutdown
