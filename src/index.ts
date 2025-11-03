@@ -298,8 +298,13 @@ class App {
 }
 
 // Start the application
+console.log('Creating App instance...');
 const app = new App();
+console.log('✅ App instance created successfully!');
+
+console.log('Calling app.start()...');
 app.start().catch((error) => {
+  console.error('❌ FATAL: Failed to start application:', error);
   logger.error('Failed to start application:', error);
   process.exit(1);
 });
