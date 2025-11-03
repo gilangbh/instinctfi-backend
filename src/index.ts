@@ -33,14 +33,32 @@ class App {
   private runScheduler: RunSchedulerService | null = null;
 
   constructor() {
-    this.app = express();
-    this.prisma = new PrismaClient();
-    this.wsServer = new WebSocketService();
-    this.priceService = new PriceService(this.prisma, this.wsServer);
-    
-    this.initializeMiddleware();
-    this.initializeRoutes();
-    this.initializeErrorHandling();
+    try {
+      logger.info('Initializing application...');
+      this.app = express();
+      logger.info('Express app created');
+      
+      this.prisma = new PrismaClient();
+      logger.info('Prisma client created');
+      
+      this.wsServer = new WebSocketService();
+      logger.info('WebSocket service created');
+      
+      this.priceService = new PriceService(this.prisma, this.wsServer);
+      logger.info('Price service created');
+      
+      this.initializeMiddleware();
+      logger.info('Middleware initialized');
+      
+      this.initializeRoutes();
+      logger.info('Routes initialized');
+      
+      this.initializeErrorHandling();
+      logger.info('Error handling initialized');
+    } catch (error) {
+      logger.error('Failed during App construction:', error);
+      throw error;
+    }
   }
 
   private initializeMiddleware(): void {
@@ -86,58 +104,77 @@ class App {
   }
 
   private initializeRoutes(): void {
-    // Initialize services
-    const userService = new UserService(this.prisma);
-    const runService = new RunService(this.prisma);
-    const driftService = new DriftService();
-
-    // Initialize and start run scheduler
-    this.runScheduler = new RunSchedulerService(this.prisma, runService);
-    this.runScheduler.start();
-
-    // Connect DriftService price updates to WebSocket broadcasts
-    driftService.setPriceUpdateCallback((priceData) => {
-      this.wsServer.broadcastPriceUpdate(priceData);
-    });
-
-    // Initialize controllers
-    const userController = new UserController(userService);
-    const runController = new RunController(runService);
-    const marketController = new MarketController(this.priceService);
-    const authController = new AuthController(userService);
-
-    // Initialize middleware
-    const authMiddleware = new AuthMiddleware(this.prisma);
-
-    // Initialize routes
-    const routes = createRoutes(userController, runController, marketController, authController, authMiddleware);
-    
-    this.app.use(`/api/${config.apiVersion}`, routes);
-
-    // Root endpoint
-    this.app.get('/', (req, res) => {
-      res.json({
-        success: true,
-        message: 'Welcome to Instinct.fi API',
-        version: config.apiVersion,
-        documentation: `/api/${config.apiVersion}/docs`,
-        health: `/api/${config.apiVersion}/health`,
-      });
-    });
-
-    // WebSocket status endpoint
-    this.app.get(`/api/${config.apiVersion}/ws/status`, (req, res) => {
-      const driftStatus = driftService.getConnectionStatus();
-      const wsStats = this.wsServer.getStats();
+    try {
+      // Initialize services
+      logger.info('Creating UserService...');
+      const userService = new UserService(this.prisma);
       
-      res.json({
-        success: true,
-        data: {
-          binanceWebSocket: driftStatus,
-          appWebSocket: wsStats,
-        },
+      logger.info('Creating RunService...');
+      const runService = new RunService(this.prisma);
+      
+      logger.info('Creating DriftService...');
+      const driftService = new DriftService();
+
+      // Initialize and start run scheduler
+      logger.info('Creating RunSchedulerService...');
+      this.runScheduler = new RunSchedulerService(this.prisma, runService);
+      
+      logger.info('Starting RunScheduler...');
+      this.runScheduler.start();
+
+      // Connect DriftService price updates to WebSocket broadcasts
+      logger.info('Setting up Drift price callback...');
+      driftService.setPriceUpdateCallback((priceData) => {
+        this.wsServer.broadcastPriceUpdate(priceData);
       });
-    });
+
+      // Initialize controllers
+      logger.info('Creating controllers...');
+      const userController = new UserController(userService);
+      const runController = new RunController(runService);
+      const marketController = new MarketController(this.priceService);
+      const authController = new AuthController(userService);
+
+      // Initialize middleware
+      logger.info('Creating auth middleware...');
+      const authMiddleware = new AuthMiddleware(this.prisma);
+
+      // Initialize routes
+      logger.info('Creating routes...');
+      const routes = createRoutes(userController, runController, marketController, authController, authMiddleware);
+      
+      this.app.use(`/api/${config.apiVersion}`, routes);
+
+      // Root endpoint
+      this.app.get('/', (req, res) => {
+        res.json({
+          success: true,
+          message: 'Welcome to Instinct.fi API',
+          version: config.apiVersion,
+          documentation: `/api/${config.apiVersion}/docs`,
+          health: `/api/${config.apiVersion}/health`,
+        });
+      });
+
+      // WebSocket status endpoint
+      this.app.get(`/api/${config.apiVersion}/ws/status`, (req, res) => {
+        const driftStatus = driftService.getConnectionStatus();
+        const wsStats = this.wsServer.getStats();
+        
+        res.json({
+          success: true,
+          data: {
+            binanceWebSocket: driftStatus,
+            appWebSocket: wsStats,
+          },
+        });
+      });
+      
+      logger.info('Routes initialization complete');
+    } catch (error) {
+      logger.error('Failed during route initialization:', error);
+      throw error;
+    }
   }
 
   private initializeErrorHandling(): void {
