@@ -144,6 +144,10 @@ export class RunSchedulerService {
           round: 1,
           status: 'OPEN',
           timeRemaining: run.votingInterval * 60, // Convert to seconds
+          leverage: 1.0, // Default, will be randomized later
+          positionSize: 50.0, // Default 50% of pool
+          currentPrice: 0, // Will be updated when voting opens
+          priceChange24h: 0, // Will be updated
         },
       });
 
