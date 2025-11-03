@@ -15,14 +15,15 @@ Your build process now **automatically runs migrations** on Railway!
 
 **After (✅ With migrations):**
 ```json
-"build": "prisma generate && prisma migrate deploy && tsc && tsc-alias"
+"build": "prisma generate && tsc && tsc-alias",
+"start": "prisma migrate deploy && node dist/index.js"
 ```
 
 ---
 
 ## 🔧 What Happens on Railway Deploy
 
-### **Build Phase:**
+### **Build Phase (No Database Access):**
 
 ```
 1. npm ci
@@ -31,21 +32,28 @@ Your build process now **automatically runs migrations** on Railway!
 2. npm run build
    ↓
    a) prisma generate      ← Generate Prisma Client
-   b) prisma migrate deploy ← Run pending migrations
-   c) tsc                   ← Compile TypeScript
-   d) tsc-alias            ← Resolve path aliases
+   b) tsc                   ← Compile TypeScript
+   c) tsc-alias            ← Resolve path aliases
    
 3. ✅ Build complete!
 ```
 
-### **Start Phase:**
+### **Start Phase (Database Available):**
 ```
 npm run start
  ↓
-node dist/index.js
+a) prisma migrate deploy  ← Run pending migrations ✅
+ ↓
+b) node dist/index.js     ← Start server
  ↓
 ✅ Server running with migrated database!
 ```
+
+**Why this works:**
+- ✅ Build phase: No database needed (just compile)
+- ✅ Start phase: Database is available (run migrations then start)
+- ✅ Migrations run before server starts
+- ✅ Zero downtime migrations
 
 ---
 
