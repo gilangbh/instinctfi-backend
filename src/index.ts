@@ -6,32 +6,63 @@ console.log('Node version:', process.version);
 console.log('Environment:', process.env.NODE_ENV);
 console.log('========================================');
 
+console.log('Importing express...');
 import express from 'express';
+console.log('✅ express imported');
+
+console.log('Importing cors, helmet, morgan, compression...');
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
+console.log('✅ middleware imports done');
+
+console.log('Importing Prisma...');
 import { PrismaClient } from '@prisma/client';
+console.log('✅ Prisma imported');
+
+console.log('Importing config and logger...');
 import { config } from '@/utils/config';
 import { morganStream } from '@/utils/logger';
 import logger from '@/utils/logger';
 import '@/types'; // Import types to ensure Request extension is loaded
+console.log('✅ Config and logger imported');
 
 // Import services and controllers
+console.log('Importing services...');
 import { UserService } from '@/services/UserService';
+console.log('✅ UserService imported');
+
 import { RunService } from '@/services/RunService';
+console.log('✅ RunService imported');
+
 import { RunSchedulerService } from '@/services/RunSchedulerService';
+console.log('✅ RunSchedulerService imported');
+
 import { DriftService } from '@/services/DriftService';
+console.log('✅ DriftService imported');
+
 import { PriceService } from '@/services/PriceService';
+console.log('✅ PriceService imported');
+
+console.log('Importing controllers...');
 import { UserController } from '@/controllers/UserController';
 import { RunController } from '@/controllers/RunController';
 import { MarketController } from '@/controllers/MarketController';
 import { AuthController } from '@/controllers/AuthController';
+console.log('✅ Controllers imported');
+
+console.log('Importing middleware and routes...');
 import { AuthMiddleware } from '@/middleware/auth';
 import { createRoutes } from '@/routes';
+console.log('✅ Middleware and routes imported');
 
 // Import WebSocket server
+console.log('Importing WebSocket...');
 import { WebSocketService } from '@/services/WebSocketService';
+console.log('✅ WebSocket imported');
+
+console.log('🎉 ALL IMPORTS SUCCESSFUL!');
 
 class App {
   public app: express.Application;
