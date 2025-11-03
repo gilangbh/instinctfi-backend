@@ -37,6 +37,9 @@ export class RunService {
     try {
       const totalRounds = Math.floor((data.duration || config.defaultRunDurationMinutes) / (data.votingInterval || config.defaultVotingIntervalMinutes));
 
+      // Set lobby phase duration (10 minutes from now)
+      // Countdown will be calculated dynamically based on createdAt + 10 minutes
+
       // First create in database to get the ID
       const run = await this.prisma.run.create({
         data: {
