@@ -255,8 +255,9 @@ class App {
 
       // Start HTTP server
       console.log(`Starting HTTP server on port ${config.port}...`);
-      const server = this.app.listen(config.port, () => {
-        console.log(`✅ HTTP server listening on port ${config.port}`);
+      // IMPORTANT: Bind to 0.0.0.0 for Railway (not localhost)
+      const server = this.app.listen(config.port, '0.0.0.0', () => {
+        console.log(`✅ HTTP server listening on 0.0.0.0:${config.port}`);
         logger.info(`HTTP server running on port ${config.port}`);
         logger.info(`Environment: ${config.nodeEnv}`);
         logger.info(`API Version: ${config.apiVersion}`);
