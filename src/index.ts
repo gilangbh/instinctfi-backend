@@ -1,3 +1,11 @@
+// DEPLOYMENT DEBUG - Log before any imports
+console.log('========================================');
+console.log('🚀 Starting InstinctFi Backend...');
+console.log('Timestamp:', new Date().toISOString());
+console.log('Node version:', process.version);
+console.log('Environment:', process.env.NODE_ENV);
+console.log('========================================');
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
