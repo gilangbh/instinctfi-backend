@@ -63,7 +63,19 @@ export class RunController {
    */
   getActiveRuns = async (req: Request, res: Response): Promise<void> => {
     try {
-      const runs = await this.runService.getActiveRuns();
+      let runs = await this.runService.getActiveRuns();
+      
+      // Add countdown to each waiting run
+      runs = runs.map((run: any) => {
+        if (run.status === 'WAITING' && run.countdown === null) {
+          // Calculate countdown from createdAt
+          const createdAt = new Date(run.createdAt);
+          const scheduledStart = new Date(createdAt.getTime() + (10 * 60 * 1000)); // 10 minutes
+          const timeUntilStart = scheduledStart.getTime() - Date.now();
+          run.countdown = Math.max(0, Math.floor(timeUntilStart / 1000));
+        }
+        return run;
+      });
 
       const response: ApiResponse = {
         success: true,

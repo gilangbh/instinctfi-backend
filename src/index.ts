@@ -12,6 +12,7 @@ import '@/types'; // Import types to ensure Request extension is loaded
 // Import services and controllers
 import { UserService } from '@/services/UserService';
 import { RunService } from '@/services/RunService';
+import { RunSchedulerService } from '@/services/RunSchedulerService';
 import { DriftService } from '@/services/DriftService';
 import { PriceService } from '@/services/PriceService';
 import { UserController } from '@/controllers/UserController';
@@ -29,6 +30,7 @@ class App {
   private prisma: PrismaClient;
   private wsServer: WebSocketService;
   private priceService: PriceService;
+  private runScheduler: RunSchedulerService | null = null;
 
   constructor() {
     this.app = express();
@@ -88,6 +90,10 @@ class App {
     const userService = new UserService(this.prisma);
     const runService = new RunService(this.prisma);
     const driftService = new DriftService();
+
+    // Initialize and start run scheduler
+    this.runScheduler = new RunSchedulerService(this.prisma, runService);
+    this.runScheduler.start();
 
     // Connect DriftService price updates to WebSocket broadcasts
     driftService.setPriceUpdateCallback((priceData) => {
@@ -185,6 +191,11 @@ class App {
       // Graceful shutdown
       const gracefulShutdown = async (signal: string) => {
         logger.info(`Received ${signal}, shutting down gracefully`);
+        
+        // Stop run scheduler
+        if (this.runScheduler) {
+          this.runScheduler.stop();
+        }
         
         // Stop price monitoring service
         this.priceService.stop();
