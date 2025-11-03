@@ -106,7 +106,7 @@ Thumbs.db
 dump.rdb
 
 # Prisma
-prisma/migrations/
+# prisma/migrations  # IMPORTANT: Don't ignore migrations - Railway needs them!/
 
 # Temporary files
 tmp/
