@@ -6,13 +6,13 @@ import logger from '@/utils/logger';
 /**
  * Run Scheduler Service
  * Handles automatic run lifecycle management:
- * - Auto-start runs after lobby phase (10 minutes)
+ * - Auto-start runs after lobby phase (configurable, default 10 minutes)
  * - Auto-cancel runs with no participants
  * - Countdown management
  */
 export class RunSchedulerService {
   private schedulerInterval: NodeJS.Timeout | null = null;
-  private readonly LOBBY_DURATION_MS = 10 * 60 * 1000; // 10 minutes
+  private readonly LOBBY_DURATION_MS = (parseInt(process.env.LOBBY_DURATION_MINUTES || '10')) * 60 * 1000; // Configurable via env
   private readonly CHECK_INTERVAL_MS = 5 * 1000; // Check every 5 seconds
 
   constructor(
@@ -30,7 +30,7 @@ export class RunSchedulerService {
     }
 
     logger.info('🕒 Starting run scheduler service');
-    logger.info(`   Lobby duration: 10 minutes`);
+    logger.info(`   Lobby duration: ${this.LOBBY_DURATION_MS / 60000} minutes`);
     logger.info(`   Check interval: 5 seconds`);
 
     // Run immediately on start
