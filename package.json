@@ -16,6 +16,7 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "db:seed": "tsx src/scripts/seed.ts",
+    "admin:token": "tsx src/scripts/generateAdminToken.ts",
     "postinstall": "prisma generate"
   },
   "keywords": [

@@ -92,3 +92,4 @@ localStorage.setItem('authToken', token);
 **No password needed!** Just wallet signature. 🎉
 
 
+

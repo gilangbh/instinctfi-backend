@@ -155,3 +155,4 @@ This is because the Anchor IDL wrapper has compatibility issues.
 
 Your backend is fully functional! The blockchain integration is there and working - just in simulation mode for now. All the important features (Drift trading, oracle prices) are completely real and working! 🚀
 
+
