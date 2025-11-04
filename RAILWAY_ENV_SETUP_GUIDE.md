@@ -405,3 +405,4 @@ Open browser console (F12) - should see successful API calls
 
 **After Railway deploys with migrations, check your PostgreSQL tab - you'll see all tables!** 🎉
 
+

@@ -284,3 +284,4 @@ node scripts/wallet-auth-test.js
 
 This will show you the complete flow and give you a working token!
 
+

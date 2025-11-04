@@ -157,3 +157,4 @@ open "https://explorer.solana.com/address/7gmTYKqNX4xKsrd6NfNRscL3XSUoUTQyyTPhyS
 - Logs: `tail -f logs/combined.log | grep blockchain`
 
 
+
