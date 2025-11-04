@@ -20,16 +20,11 @@ const isAdmin = req.user.username === 'admin' || req.user.walletAddress === 'adm
 
 ---
 
-## 🚀 **Option 1: Create Admin via Frontend (EASIEST)**
+## 🚀 **Option 1: Create Admin via Frontend (DEPRECATED)**
 
-### **Step 1: Login with Admin Username**
+⚠️ **Note:** As of the latest update, usernames are auto-generated from wallet addresses to prevent users from accidentally (or intentionally) setting admin usernames. You can no longer create admin users via the frontend login flow.
 
-1. **Go to your frontend:** https://testnet.instinctfi.xyz
-2. **Connect wallet** (any wallet works)
-3. **Important:** When prompted for username, enter: `admin`
-4. **Sign the message** with your wallet
-
-That's it! Your account is now an admin because `username === 'admin'`.
+**Use Option 3 (Database) instead to create admin users.**
 
 ### **Step 2: Get Your Admin Token**
 
@@ -487,10 +482,30 @@ Should see:
 
 ---
 
+## 🔒 **Security Update: Auto-Generated Usernames**
+
+As of the latest version, **usernames are automatically generated** from wallet addresses using a crypto-style format (e.g., `trader_abc123`, `whale_xyz789`). This prevents users from:
+
+- Setting reserved usernames like "admin", "moderator", "system"
+- Accidentally gaining admin privileges
+- Username spoofing
+
+**Backend Validation:**
+- Reserved usernames: `admin`, `moderator`, `mod`, `system`, `instinct`, `support`, `staff`, `official`, `bot`, `api`
+- If a reserved username is provided, it's automatically replaced with an auto-generated one
+- Username format: `[prefix]_[6_chars_from_wallet]`
+
+**Frontend:**
+- Username input removed from wallet connection flow
+- Username displayed automatically after wallet connection
+- No user input required
+
+---
+
 ## 📚 **Summary**
 
-1. **Create admin user:** Login with username "admin" (frontend) OR create in database
-2. **Get admin token:** Browser console OR `generateAdminToken.ts` script
+1. **Create admin user:** Create directly in database (Option 3 - RECOMMENDED)
+2. **Get admin token:** `railway run -- npm run admin:token` script
 3. **Create run:** POST to `https://your-backend.railway.app/api/v1/runs` with admin token
 4. **Verify:** Check frontend dashboard or Prisma Studio
 

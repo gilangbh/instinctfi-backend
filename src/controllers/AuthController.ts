@@ -4,6 +4,7 @@ import bs58 from 'bs58';
 import nacl from 'tweetnacl';
 import { UserService } from '@/services/UserService';
 import logger from '@/utils/logger';
+import { generateUsername, validateUsername, isReservedUsername } from '@/utils/usernameGenerator';
 
 export class AuthController {
   constructor(private userService: UserService) {}
@@ -76,11 +77,26 @@ export class AuthController {
       let user = await this.userService.getUserByWalletAddress(walletAddress);
 
       if (!user) {
-        // Create new user
-        logger.info(`Creating new user for wallet ${walletAddress}`);
+        // Create new user with auto-generated username
+        // Auto-generate username if not provided or if it's reserved
+        let finalUsername = username;
+        
+        if (!finalUsername || isReservedUsername(finalUsername)) {
+          finalUsername = generateUsername(walletAddress);
+          logger.info(`Auto-generated username for ${walletAddress}: ${finalUsername}`);
+        } else {
+          // Validate provided username
+          const validationError = validateUsername(finalUsername);
+          if (validationError) {
+            logger.warn(`Invalid username "${finalUsername}", auto-generating instead`);
+            finalUsername = generateUsername(walletAddress);
+          }
+        }
+        
+        logger.info(`Creating new user for wallet ${walletAddress} with username ${finalUsername}`);
         user = await this.userService.createUser({
           walletAddress,
-          username,
+          username: finalUsername,
         });
       } else {
         // User exists - just authenticate (don't update username)
