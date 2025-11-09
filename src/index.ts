@@ -42,6 +42,9 @@ console.log('✅ RunSchedulerService imported');
 import { DriftService } from '@/services/DriftService';
 console.log('✅ DriftService imported');
 
+import { WaitlistService } from '@/services/WaitlistService';
+console.log('✅ WaitlistService imported');
+
 import { PriceService } from '@/services/PriceService';
 console.log('✅ PriceService imported');
 
@@ -50,6 +53,7 @@ import { UserController } from '@/controllers/UserController';
 import { RunController } from '@/controllers/RunController';
 import { MarketController } from '@/controllers/MarketController';
 import { AuthController } from '@/controllers/AuthController';
+import { WaitlistController } from '@/controllers/WaitlistController';
 console.log('✅ Controllers imported');
 
 console.log('Importing middleware and routes...');
@@ -154,6 +158,9 @@ class App {
       logger.info('Creating DriftService...');
       const driftService = new DriftService();
 
+      logger.info('Creating WaitlistService...');
+      const waitlistService = new WaitlistService();
+
       // Initialize and start run scheduler
       logger.info('Creating RunSchedulerService...');
       this.runScheduler = new RunSchedulerService(this.prisma, runService);
@@ -173,6 +180,7 @@ class App {
       const runController = new RunController(runService);
       const marketController = new MarketController(this.priceService);
       const authController = new AuthController(userService);
+      const waitlistController = new WaitlistController(waitlistService);
 
       // Initialize middleware
       logger.info('Creating auth middleware...');
@@ -180,7 +188,14 @@ class App {
 
       // Initialize routes
       logger.info('Creating routes...');
-      const routes = createRoutes(userController, runController, marketController, authController, authMiddleware);
+      const routes = createRoutes(
+        userController,
+        runController,
+        marketController,
+        authController,
+        waitlistController,
+        authMiddleware
+      );
       
       this.app.use(`/api/${config.apiVersion}`, routes);
 
