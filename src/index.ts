@@ -14,11 +14,13 @@ import { UserService } from '@/services/UserService';
 import { RunService } from '@/services/RunService';
 import { RunSchedulerService } from '@/services/RunSchedulerService';
 import { DriftService } from '@/services/DriftService';
+import { WaitlistService } from '@/services/WaitlistService';
 import { PriceService } from '@/services/PriceService';
 import { UserController } from '@/controllers/UserController';
 import { RunController } from '@/controllers/RunController';
 import { MarketController } from '@/controllers/MarketController';
 import { AuthController } from '@/controllers/AuthController';
+import { WaitlistController } from '@/controllers/WaitlistController';
 import { AuthMiddleware } from '@/middleware/auth';
 import { createRoutes } from '@/routes';
 
@@ -90,6 +92,7 @@ class App {
     const userService = new UserService(this.prisma);
     const runService = new RunService(this.prisma);
     const driftService = new DriftService();
+    const waitlistService = new WaitlistService();
 
     // Initialize and start run scheduler
     this.runScheduler = new RunSchedulerService(this.prisma, runService);
@@ -105,12 +108,20 @@ class App {
     const runController = new RunController(runService);
     const marketController = new MarketController(this.priceService);
     const authController = new AuthController(userService);
+    const waitlistController = new WaitlistController(waitlistService);
 
     // Initialize middleware
     const authMiddleware = new AuthMiddleware(this.prisma);
 
     // Initialize routes
-    const routes = createRoutes(userController, runController, marketController, authController, authMiddleware);
+    const routes = createRoutes(
+      userController,
+      runController,
+      marketController,
+      authController,
+      waitlistController,
+      authMiddleware
+    );
     
     this.app.use(`/api/${config.apiVersion}`, routes);
 
