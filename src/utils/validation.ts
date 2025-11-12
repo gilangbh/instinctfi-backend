@@ -26,11 +26,13 @@ export const createRunSchema = Joi.object({
 
 export const joinRunSchema = Joi.object({
   depositAmount: Joi.number().integer().min(10).max(100).required(), // 10-100 USDC
+  walletSignature: Joi.string().min(16).max(200).optional(),
 });
 
 // Vote validation schemas
 export const castVoteSchema = Joi.object({
   choice: Joi.string().valid(...Object.values(VoteChoice)).required(),
+  round: Joi.number().integer().min(1).required(),
 });
 
 // Chat validation schemas
