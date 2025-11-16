@@ -1,7 +1,8 @@
-import { PrismaClient, RunStatus } from '@prisma/client';
+import { PrismaClient, RunStatus, RoundStatus } from '@prisma/client';
 import { RunService } from './RunService';
 import { SolanaService } from './SolanaService';
 import logger from '@/utils/logger';
+import { config } from '@/utils/config';
 
 /**
  * Run Scheduler Service
@@ -9,6 +10,8 @@ import logger from '@/utils/logger';
  * - Auto-start runs after lobby phase (configurable, default 10 minutes)
  * - Auto-cancel runs with no participants
  * - Countdown management
+ * - Execute trades when voting rounds expire
+ * - Create next voting rounds automatically
  */
 export class RunSchedulerService {
   private schedulerInterval: NodeJS.Timeout | null = null;
@@ -70,6 +73,17 @@ export class RunSchedulerService {
 
       for (const run of waitingRuns) {
         await this.processRun(run);
+      }
+
+      // Also process ACTIVE runs to check for expired voting rounds
+      const activeRuns = await this.prisma.run.findMany({
+        where: {
+          status: RunStatus.ACTIVE,
+        },
+      });
+
+      for (const run of activeRuns) {
+        await this.processActiveRun(run);
       }
     } catch (error) {
       logger.error('Error processing runs:', error);
@@ -184,6 +198,100 @@ export class RunSchedulerService {
 
     } catch (error) {
       logger.error(`Error canceling run ${run.id}:`, error);
+    }
+  }
+
+  /**
+   * Process active runs - check for expired voting rounds
+   */
+  private async processActiveRun(run: any) {
+    try {
+      // Get the current open voting round
+      const currentRound = await this.prisma.votingRound.findFirst({
+        where: {
+          runId: run.id,
+          status: RoundStatus.OPEN,
+        },
+        orderBy: {
+          round: 'desc',
+        },
+      });
+
+      if (!currentRound) {
+        // No open round - check if we need to end the run
+        const totalRounds = Math.floor((run.duration || config.defaultRunDurationMinutes) / (run.votingInterval || config.defaultVotingIntervalMinutes));
+        const completedRounds = await this.prisma.votingRound.count({
+          where: {
+            runId: run.id,
+            status: RoundStatus.EXECUTING,
+          },
+        });
+
+        if (completedRounds >= totalRounds) {
+          // All rounds completed - end the run
+          await this.endRun(run);
+        }
+        return;
+      }
+
+      // Check if voting round timer has expired
+      const now = new Date();
+      const startedAt = new Date(currentRound.startedAt);
+      const votingIntervalMs = (run.votingInterval || config.defaultVotingIntervalMinutes) * 60 * 1000;
+      const elapsed = now.getTime() - startedAt.getTime();
+
+      if (elapsed >= votingIntervalMs) {
+        // Timer expired - execute trade and create next round
+        await this.handleVotingRoundExpired(run, currentRound);
+      }
+    } catch (error) {
+      logger.error(`Error processing active run ${run.id}:`, error);
+    }
+  }
+
+  /**
+   * Handle expired voting round - execute trade and create next round
+   */
+  private async handleVotingRoundExpired(run: any, votingRound: any) {
+    try {
+      logger.info(`⏰ Voting round ${votingRound.round} expired for run ${run.id}`);
+
+      // Execute the trade for this round
+      await this.runService.executeTrade(run.id, votingRound.round);
+
+      logger.info(`✅ Trade executed for run ${run.id} round ${votingRound.round}`);
+
+      // Check if this was the last round
+      const totalRounds = Math.floor((run.duration || config.defaultRunDurationMinutes) / (run.votingInterval || config.defaultVotingIntervalMinutes));
+      
+      if (votingRound.round >= totalRounds) {
+        // Last round completed - end the run
+        logger.info(`🏁 All rounds completed for run ${run.id} - ending run`);
+        await this.endRun(run);
+      } else {
+        // Create next voting round
+        const nextRound = votingRound.round + 1;
+        logger.info(`🔄 Creating next voting round ${nextRound} for run ${run.id}`);
+        await this.runService.createVotingRound(run.id, nextRound);
+        logger.info(`✅ Next voting round ${nextRound} created for run ${run.id}`);
+      }
+    } catch (error) {
+      logger.error(`Error handling expired voting round for run ${run.id}:`, error);
+    }
+  }
+
+  /**
+   * End a run after all rounds are completed
+   */
+  private async endRun(run: any) {
+    try {
+      logger.info(`🏁 Ending run ${run.id} - all rounds completed`);
+
+      await this.runService.endRun(run.id);
+
+      logger.info(`✅ Run ${run.id} ended successfully`);
+    } catch (error) {
+      logger.error(`Error ending run ${run.id}:`, error);
     }
   }
 
