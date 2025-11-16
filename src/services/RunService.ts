@@ -144,7 +144,7 @@ export class RunService {
             orderBy: {
               round: 'desc',
             },
-            take: 1, // Only need the latest round for currentRound calculation
+            // Include all voting rounds so frontend can find OPEN round
           },
         },
         orderBy: {
