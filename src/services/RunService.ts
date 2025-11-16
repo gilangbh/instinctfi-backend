@@ -234,6 +234,12 @@ export class RunService {
         },
       });
 
+      if (data.walletSignature) {
+        logger.info(
+          `Deposit signature recorded for run ${runId} / user ${userId}: ${data.walletSignature}`
+        );
+      }
+
       // Update run total pool
       await this.prisma.run.update({
         where: { id: runId },
@@ -363,19 +369,29 @@ export class RunService {
       const currentPrice = 150.0; // TODO: Get real price from price feed
       const priceChange24h = 2.5; // TODO: Get real 24h change
 
+      // Database stores leverage and positionSize as integers
+      // Store as tenths (multiply by 10) to preserve 1 decimal place
+      // e.g., 15.3x leverage -> 153, 45.7% position -> 457
+      const leverageStored = Math.round(chaosModifiers.leverage * 10);
+      const positionSizeStored = Math.round(chaosModifiers.positionSizePercentage * 10);
+
       const votingRound = await this.prisma.votingRound.create({
         data: {
           runId,
           round,
-          leverage: chaosModifiers.leverage,
-          positionSize: chaosModifiers.positionSize,
+          leverage: leverageStored,
+          positionSize: positionSizeStored,
           currentPrice,
           priceChange24h,
           timeRemaining: 600, // 10 minutes in seconds
+          startedAt: new Date(), // Explicitly set startedAt for timer calculation
         },
       });
 
-      logger.info(`Voting round created: ${runId} - Round ${round}`);
+      logger.info(`🎲 Voting round created: ${runId} - Round ${round}`, {
+        leverage: `${chaosModifiers.leverage.toFixed(1)}x (stored as ${leverageStored})`,
+        positionSize: `${chaosModifiers.positionSizePercentage.toFixed(1)}% (stored as ${positionSizeStored})`,
+      });
       return votingRound;
     } catch (error) {
       logger.error('Error creating voting round:', error);
@@ -458,6 +474,7 @@ export class RunService {
 
   /**
    * Execute trade for a round
+   * Uses chaos modifiers (randomized position size 10-100% and leverage 1-20x)
    */
   async executeTrade(runId: string, round: number): Promise<Trade> {
     try {
@@ -493,7 +510,7 @@ export class RunService {
         skip: votes.filter(v => v.choice === 'SKIP').length,
       };
 
-      // Determine trade direction
+      // Determine trade direction (majority wins)
       let direction = 'SKIP';
       if (voteDistribution.long > voteDistribution.short && voteDistribution.long > voteDistribution.skip) {
         direction = 'LONG';
@@ -501,7 +518,17 @@ export class RunService {
         direction = 'SHORT';
       }
 
-      // Update voting round with vote distribution
+      // Generate chaos modifiers (randomized position size & leverage per PRD)
+      const { generateChaosModifiers } = await import('@/utils/chaosModifier');
+      const chaosModifiers = generateChaosModifiers();
+      
+      logger.info(`🎲 Chaos modifiers for round ${round}:`, {
+        positionSize: `${chaosModifiers.positionSizePercentage.toFixed(1)}%`,
+        leverage: `${chaosModifiers.leverage.toFixed(1)}x`,
+        slippage: `${(chaosModifiers.slippageTolerance * 100).toFixed(1)}%`,
+      });
+
+      // Update voting round with vote distribution and chaos modifiers
       await this.prisma.votingRound.update({
         where: {
           runId_round: {
@@ -512,29 +539,41 @@ export class RunService {
         data: {
           voteDistribution,
           status: RoundStatus.EXECUTING,
+          // Update with actual chaos values
+          positionSize: chaosModifiers.positionSizePercentage,
+          leverage: chaosModifiers.leverage,
         },
       });
 
-      // Execute trade (mock for now)
+      // Execute trade
       const entryPrice = Number(votingRound.currentPrice);
-      const exitPrice = direction === 'SKIP' ? entryPrice : entryPrice * (1 + (Math.random() - 0.5) * 0.1); // Random price change
+      let exitPrice = entryPrice;
+      let pnl = 0;
       
-      const positionSize = calculatePositionSize(run.totalPool, votingRound.positionSize);
-      const pnl = direction === 'SKIP' ? 0 : calculatePotentialPnL(
-        entryPrice,
-        exitPrice,
-        positionSize,
-        votingRound.leverage,
-        direction.toLowerCase() as 'long' | 'short'
-      );
+      if (direction !== 'SKIP') {
+        // Calculate position size in USDC
+        const positionSizeUsdc = (run.totalPool / 100) * chaosModifiers.positionSizePercentage / 100;
+        
+        // Simulate price change (replace with real Drift execution later)
+        exitPrice = entryPrice * (1 + (Math.random() - 0.5) * 0.1); // ±5% random change
+        
+        // Calculate PnL
+        pnl = calculatePotentialPnL(
+          entryPrice,
+          exitPrice,
+          positionSizeUsdc,
+          chaosModifiers.leverage,
+          direction.toLowerCase() as 'long' | 'short'
+        );
+      }
 
       const trade = await this.prisma.trade.create({
         data: {
           runId,
           round,
           direction: direction as any,
-          leverage: votingRound.leverage,
-          positionSize: votingRound.positionSize,
+          leverage: chaosModifiers.leverage,
+          positionSize: chaosModifiers.positionSizePercentage,
           entryPrice,
           exitPrice: direction !== 'SKIP' ? exitPrice : null,
           pnl,
@@ -551,7 +590,7 @@ export class RunService {
         },
       });
 
-      logger.info(`Trade executed: ${runId} - Round ${round} - ${direction} - PnL: ${pnl}`);
+      logger.info(`Trade executed: ${runId} - Round ${round} - ${direction} - ${chaosModifiers.leverage.toFixed(1)}x leverage - ${chaosModifiers.positionSizePercentage.toFixed(1)}% position - PnL: ${pnl.toFixed(2)} cents`);
       return trade;
     } catch (error) {
       logger.error('Error executing trade:', error);
