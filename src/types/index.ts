@@ -138,6 +138,7 @@ export interface CreateRunRequest {
 
 export interface JoinRunRequest {
   depositAmount: number;
+  walletSignature?: string;
 }
 
 // Run Participant Types

@@ -195,6 +195,8 @@ export class RealDriftService {
   /**
    * Open a position on Drift
    * Following official Drift SDK documentation for placing perp orders
+   * 
+   * If leverage is provided, calculates position size to achieve target leverage
    */
   async openPosition(params: DriftTradeParams): Promise<string> {
     this.ensureInitialized();
@@ -209,10 +211,35 @@ export class RealDriftService {
         ? PositionDirection.LONG 
         : PositionDirection.SHORT;
 
-      // Convert to base precision (9 decimals for SOL)
-      const baseAssetAmount = new BN(params.baseAmount * 1e9);
+      let baseAssetAmount: BN;
 
-      logger.info(`Opening ${params.direction} position: ${params.baseAmount} on ${params.marketSymbol}`);
+      // If leverage is specified, calculate position size to achieve target leverage
+      if (params.leverage && params.leverage > 1) {
+        // Get available collateral
+        const freeCollateral = this.user.getFreeCollateral().toNumber() / 1e6; // QUOTE_PRECISION
+        
+        // Get current price
+        const currentPrice = await this.getOraclePrice(params.marketSymbol);
+        
+        // Calculate leveraged position value
+        const leveragedPositionValue = freeCollateral * params.leverage;
+        
+        // Convert to base asset amount
+        const calculatedBaseAmount = leveragedPositionValue / currentPrice;
+        baseAssetAmount = new BN(calculatedBaseAmount * 1e9);
+        
+        logger.info(`Opening ${params.direction} position with ${params.leverage}x leverage:`, {
+          freeCollateral: `$${freeCollateral.toFixed(2)}`,
+          currentPrice: `$${currentPrice.toFixed(2)}`,
+          leveragedValue: `$${leveragedPositionValue.toFixed(2)}`,
+          baseAmount: calculatedBaseAmount.toFixed(4),
+          marketSymbol: params.marketSymbol,
+        });
+      } else {
+        // Use specified base amount directly (for backward compatibility)
+        baseAssetAmount = new BN(params.baseAmount * 1e9);
+        logger.info(`Opening ${params.direction} position: ${params.baseAmount} ${params.marketSymbol}`);
+      }
 
       // Place market order (official pattern from Drift docs)
       const tx = await this.driftClient!.placePerpOrder({

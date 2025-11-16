@@ -1,0 +1,239 @@
+{
+  "info": {
+    "name": "InstinctFi Admin API",
+    "description": "Admin API endpoints for creating and managing runs on InstinctFi",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{admin_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://instinctfi-backend-develop.up.railway.app",
+      "type": "string"
+    },
+    {
+      "key": "admin_token",
+      "value": "PASTE_YOUR_ADMIN_TOKEN_HERE",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Create Run (Standard)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"tradingPair\": \"SOL/USD\",\n  \"coin\": \"SOL\",\n  \"duration\": 120,\n  \"votingInterval\": 10,\n  \"minDeposit\": 10,\n  \"maxDeposit\": 100,\n  \"maxParticipants\": 100\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/runs",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "runs"]
+        },
+        "description": "Create a standard 2-hour run with 12 voting rounds"
+      },
+      "response": []
+    },
+    {
+      "name": "2. Create Run (Short - 30min)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"tradingPair\": \"SOL/USD\",\n  \"coin\": \"SOL\",\n  \"duration\": 30,\n  \"votingInterval\": 5,\n  \"minDeposit\": 10,\n  \"maxDeposit\": 50,\n  \"maxParticipants\": 50\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/runs",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "runs"]
+        },
+        "description": "Create a short 30-minute run for quick demo (6 voting rounds of 5 min each)"
+      },
+      "response": []
+    },
+    {
+      "name": "3. Get Active Runs",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/runs/active",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "runs", "active"]
+        },
+        "description": "Get all active runs (no auth required)"
+      },
+      "response": []
+    },
+    {
+      "name": "4. Get Run by ID",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/runs/:runId",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "runs", ":runId"],
+          "variable": [
+            {
+              "key": "runId",
+              "value": "PASTE_RUN_ID_HERE"
+            }
+          ]
+        },
+        "description": "Get details of a specific run"
+      },
+      "response": []
+    },
+    {
+      "name": "5. Get Run Participants",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/runs/:runId/participants",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "runs", ":runId", "participants"],
+          "variable": [
+            {
+              "key": "runId",
+              "value": "PASTE_RUN_ID_HERE"
+            }
+          ]
+        },
+        "description": "Get all participants in a run"
+      },
+      "response": []
+    },
+    {
+      "name": "6. Get Run Trades",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/runs/:runId/trades",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "runs", ":runId", "trades"],
+          "variable": [
+            {
+              "key": "runId",
+              "value": "PASTE_RUN_ID_HERE"
+            }
+          ]
+        },
+        "description": "Get all trades executed in a run"
+      },
+      "response": []
+    },
+    {
+      "name": "7. Get Current Voting Round",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/runs/:runId/voting-rounds/current",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "runs", ":runId", "voting-rounds", "current"],
+          "variable": [
+            {
+              "key": "runId",
+              "value": "PASTE_RUN_ID_HERE"
+            }
+          ]
+        },
+        "description": "Get the current voting round for an active run"
+      },
+      "response": []
+    },
+    {
+      "name": "8. Health Check",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        },
+        "description": "Check if the backend is healthy and running"
+      },
+      "response": []
+    },
+    {
+      "name": "9. Get Run History",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/runs/history?limit=10&offset=0",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "runs", "history"],
+          "query": [
+            {
+              "key": "limit",
+              "value": "10"
+            },
+            {
+              "key": "offset",
+              "value": "0"
+            }
+          ]
+        },
+        "description": "Get historical runs (ended/cancelled)"
+      },
+      "response": []
+    }
+  ]
+}
+
+
+
+
+
+
+
+
+

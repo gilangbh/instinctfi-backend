@@ -153,7 +153,7 @@ class App {
       const userService = new UserService(this.prisma);
       
       logger.info('Creating RunService...');
-      const runService = new RunService(this.prisma);
+      const runService = new RunService(this.prisma, undefined, this.wsServer);
       
       logger.info('Creating DriftService...');
       const driftService = new DriftService();

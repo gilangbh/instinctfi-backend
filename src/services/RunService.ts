@@ -8,6 +8,7 @@ import logger from '@/utils/logger';
 import { config } from '@/utils/config';
 import { SolanaService } from './SolanaService';
 import { getExplorerUrl } from '@/utils/solana';
+import { WebSocketService } from './WebSocketService';
 
 // Type for Run with included relations
 type RunWithParticipants = Run & {
@@ -18,8 +19,9 @@ type RunWithParticipants = Run & {
 
 export class RunService {
   private solanaService: SolanaService | null = null;
+  private wsService: WebSocketService | null = null;
 
-  constructor(private prisma: PrismaClient, solanaService?: SolanaService) {
+  constructor(private prisma: PrismaClient, solanaService?: SolanaService, wsService?: WebSocketService) {
     // Make Solana service optional - useful for development when blockchain is not needed
     try {
       this.solanaService = solanaService || new SolanaService();
@@ -29,6 +31,9 @@ export class RunService {
       logger.warn('To enable blockchain features, ensure Solana configuration is correct');
       this.solanaService = null;
     }
+    
+    // WebSocket service for real-time updates
+    this.wsService = wsService || null;
   }
 
   /**
@@ -469,6 +474,37 @@ export class RunService {
       });
 
       logger.info(`Vote cast: User ${userId} voted ${choice} in run ${runId} round ${round}`);
+
+      // Calculate vote distribution and broadcast update via WebSocket
+      const votes = await this.prisma.vote.findMany({
+        where: {
+          runId,
+          round,
+        },
+      });
+
+      const voteDistribution = {
+        long: votes.filter(v => v.choice === 'LONG').length,
+        short: votes.filter(v => v.choice === 'SHORT').length,
+        skip: votes.filter(v => v.choice === 'SKIP').length,
+      };
+
+      // Calculate time remaining
+      const now = new Date();
+      const startedAt = votingRound.startedAt;
+      const votingIntervalMs = (run.votingInterval || config.defaultVotingIntervalMinutes) * 60 * 1000;
+      const elapsed = now.getTime() - startedAt.getTime();
+      const timeRemaining = Math.max(0, Math.floor((votingIntervalMs - elapsed) / 1000));
+
+      // Broadcast vote update via WebSocket
+      if (this.wsService) {
+        this.wsService.broadcastVoteUpdate(runId, {
+          runId,
+          round,
+          voteDistribution,
+          timeRemaining,
+        });
+      }
     } catch (error) {
       logger.error('Error casting vote:', error);
       throw error;
