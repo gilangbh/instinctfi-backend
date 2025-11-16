@@ -8,3 +8,9 @@ export const createWaitlistRoutes = (waitlistController: WaitlistController): Ro
 
   return router;
 };
+
+
+
+
+
+
