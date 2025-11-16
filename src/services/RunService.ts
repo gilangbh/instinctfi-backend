@@ -1,7 +1,8 @@
 import { PrismaClient, Run, RunParticipant, Trade, VotingRound, RunStatus, RoundStatus, User } from '@prisma/client';
 import { CreateRunRequest, JoinRunRequest, Run as RunType } from '@/types';
 import { AppError } from '@/types';
-import { generateChaosModifiers, calculatePositionSize, calculatePotentialPnL, applyPlatformFee, distributePnL, calculateFinalShare } from '@/utils/chaos';
+import { calculatePositionSize, calculatePotentialPnL, applyPlatformFee, distributePnL, calculateFinalShare } from '@/utils/chaos';
+import { generateChaosModifiers } from '@/utils/chaosModifier';
 import { calculateVoteXp, calculateRunXp } from '@/utils/xp';
 import logger from '@/utils/logger';
 import { config } from '@/utils/config';
@@ -234,9 +235,11 @@ export class RunService {
         },
       });
 
-      if (data.walletSignature) {
+      // Check for walletSignature property (optional field)
+      const walletSignature = (data as JoinRunRequest & { walletSignature?: string }).walletSignature;
+      if (walletSignature) {
         logger.info(
-          `Deposit signature recorded for run ${runId} / user ${userId}: ${data.walletSignature}`
+          `Deposit signature recorded for run ${runId} / user ${userId}: ${walletSignature}`
         );
       }
 
@@ -519,7 +522,6 @@ export class RunService {
       }
 
       // Generate chaos modifiers (randomized position size & leverage per PRD)
-      const { generateChaosModifiers } = await import('@/utils/chaosModifier');
       const chaosModifiers = generateChaosModifiers();
       
       logger.info(`🎲 Chaos modifiers for round ${round}:`, {
@@ -529,6 +531,10 @@ export class RunService {
       });
 
       // Update voting round with vote distribution and chaos modifiers
+      // Store as tenths (multiply by 10) to match database format
+      const leverageStored = Math.round(chaosModifiers.leverage * 10);
+      const positionSizeStored = Math.round(chaosModifiers.positionSizePercentage * 10);
+      
       await this.prisma.votingRound.update({
         where: {
           runId_round: {
@@ -539,9 +545,9 @@ export class RunService {
         data: {
           voteDistribution,
           status: RoundStatus.EXECUTING,
-          // Update with actual chaos values
-          positionSize: chaosModifiers.positionSizePercentage,
-          leverage: chaosModifiers.leverage,
+          // Update with actual chaos values (stored as tenths)
+          positionSize: positionSizeStored,
+          leverage: leverageStored,
         },
       });
 
@@ -567,13 +573,17 @@ export class RunService {
         );
       }
 
+      // Store trade values as tenths (multiply by 10) to match database format
+      const tradeLeverageStored = Math.round(chaosModifiers.leverage * 10);
+      const tradePositionSizeStored = Math.round(chaosModifiers.positionSizePercentage * 10);
+      
       const trade = await this.prisma.trade.create({
         data: {
           runId,
           round,
           direction: direction as any,
-          leverage: chaosModifiers.leverage,
-          positionSize: chaosModifiers.positionSizePercentage,
+          leverage: tradeLeverageStored,
+          positionSize: tradePositionSizeStored,
           entryPrice,
           exitPrice: direction !== 'SKIP' ? exitPrice : null,
           pnl,
