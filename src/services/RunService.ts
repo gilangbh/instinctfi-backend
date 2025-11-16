@@ -140,6 +140,12 @@ export class RunService {
               user: true,
             },
           },
+          votingRounds: {
+            orderBy: {
+              round: 'desc',
+            },
+            take: 1, // Only need the latest round for currentRound calculation
+          },
         },
         orderBy: {
           createdAt: 'desc',
