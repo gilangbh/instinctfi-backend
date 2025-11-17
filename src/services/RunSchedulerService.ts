@@ -250,22 +250,43 @@ export class RunSchedulerService {
   }
 
   /**
-   * Handle expired voting round - execute trade and create next round
+   * Handle expired voting round - close previous position, execute new trade, and create next round
    */
   private async handleVotingRoundExpired(run: any, votingRound: any) {
     try {
       logger.info(`⏰ Voting round ${votingRound.round} expired for run ${run.id}`);
 
-      // Execute the trade for this round
-      await this.runService.executeTrade(run.id, votingRound.round);
+      // Close the previous round's position (if it exists and is still open)
+      if (votingRound.round > 1) {
+        const previousRound = votingRound.round - 1;
+        try {
+          const previousTrade = await this.prisma.trade.findFirst({
+            where: {
+              runId: run.id,
+              round: previousRound,
+            },
+          });
 
-      logger.info(`✅ Trade executed for run ${run.id} round ${votingRound.round}`);
+          if (previousTrade && previousTrade.exitPrice === null) {
+            logger.info(`🔒 Closing position from round ${previousRound} (stayed open for ${run.votingInterval} minutes)`);
+            await this.runService.closePosition(run.id, previousRound);
+            logger.info(`✅ Position from round ${previousRound} closed`);
+          }
+        } catch (error) {
+          logger.error(`Error closing previous round's position:`, error);
+          // Continue anyway - don't block new trade execution
+        }
+      }
+
+      // Execute the trade for this round (opens new position)
+      await this.runService.executeTrade(run.id, votingRound.round);
+      logger.info(`✅ Trade opened for run ${run.id} round ${votingRound.round}`);
 
       // Check if this was the last round
       const totalRounds = Math.floor((run.duration || config.defaultRunDurationMinutes) / (run.votingInterval || config.defaultVotingIntervalMinutes));
       
       if (votingRound.round >= totalRounds) {
-        // Last round completed - end the run
+        // Last round completed - end the run (will close last position in endRun)
         logger.info(`🏁 All rounds completed for run ${run.id} - ending run`);
         await this.endRun(run);
       } else {
@@ -274,6 +295,7 @@ export class RunSchedulerService {
         logger.info(`🔄 Creating next voting round ${nextRound} for run ${run.id}`);
         await this.runService.createVotingRound(run.id, nextRound);
         logger.info(`✅ Next voting round ${nextRound} created for run ${run.id}`);
+        logger.info(`   Current position will close when round ${nextRound} voting ends`);
       }
     } catch (error) {
       logger.error(`Error handling expired voting round for run ${run.id}:`, error);

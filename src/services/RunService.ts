@@ -9,6 +9,7 @@ import { config } from '@/utils/config';
 import { SolanaService } from './SolanaService';
 import { getExplorerUrl } from '@/utils/solana';
 import { WebSocketService } from './WebSocketService';
+import { DriftIntegrationService } from './DriftIntegrationService';
 
 // Type for Run with included relations
 type RunWithParticipants = Run & {
@@ -20,8 +21,14 @@ type RunWithParticipants = Run & {
 export class RunService {
   private solanaService: SolanaService | null = null;
   private wsService: WebSocketService | null = null;
+  private driftService: DriftIntegrationService | null = null;
 
-  constructor(private prisma: PrismaClient, solanaService?: SolanaService, wsService?: WebSocketService) {
+  constructor(
+    private prisma: PrismaClient, 
+    solanaService?: SolanaService, 
+    wsService?: WebSocketService,
+    driftService?: DriftIntegrationService
+  ) {
     // Make Solana service optional - useful for development when blockchain is not needed
     try {
       this.solanaService = solanaService || new SolanaService();
@@ -34,6 +41,9 @@ export class RunService {
     
     // WebSocket service for real-time updates
     this.wsService = wsService || null;
+    
+    // Drift service for trade execution
+    this.driftService = driftService || null;
   }
 
   /**
@@ -593,32 +603,61 @@ export class RunService {
         },
       });
 
-      // Execute trade
+      // Execute trade - OPEN position (will close when next round ends)
       const entryPrice = Number(votingRound.currentPrice);
-      let exitPrice = entryPrice;
-      let pnl = 0;
+      let exitPrice: number | null = null; // Will be set when position closes
+      let pnl = 0; // Will be calculated when position closes
+      let tradeTransactionId: string | undefined;
       
       if (direction !== 'SKIP') {
         // Calculate position size in USDC
         const positionSizeUsdc = (run.totalPool / 100) * chaosModifiers.positionSizePercentage / 100;
         
-        // Simulate price change (replace with real Drift execution later)
-        exitPrice = entryPrice * (1 + (Math.random() - 0.5) * 0.1); // ±5% random change
-        
-        // Calculate PnL
-        pnl = calculatePotentialPnL(
-          entryPrice,
-          exitPrice,
-          positionSizeUsdc,
-          chaosModifiers.leverage,
-          direction.toLowerCase() as 'long' | 'short'
-        );
+        // Execute trade on Drift Protocol (or simulate if not enabled)
+        if (this.driftService) {
+          try {
+            // Get market symbol from trading pair (e.g., "SOL/USDC" -> "SOL-PERP")
+            const marketSymbol = run.tradingPair?.split('/')[0] + '-PERP' || 'SOL-PERP';
+            
+            logger.info(`🚀 Opening position on Drift: ${direction} ${positionSizeUsdc / 100} USDC at ${chaosModifiers.leverage}x leverage`);
+            logger.info(`   Position will stay open until next round's voting ends (${run.votingInterval} minutes)`);
+            logger.info(`   DriftService available: ${!!this.driftService}`);
+            logger.info(`   Is real trading enabled: ${this.driftService.isRealTrading()}`);
+            
+            const tradeResult = await this.driftService.executeTrade({
+              marketSymbol,
+              direction: direction.toLowerCase() as 'long' | 'short',
+              baseAmount: positionSizeUsdc / 100, // Convert from cents to USDC
+              leverage: chaosModifiers.leverage,
+            });
+            
+            if (tradeResult.success) {
+              tradeTransactionId = tradeResult.transactionId;
+              // Position is now OPEN - we'll close it when the next round's voting ends
+              // For now, set exitPrice to null and pnl to 0
+              logger.info(`✅ Position opened successfully on Drift: ${tradeTransactionId}`);
+              logger.info(`   Entry: $${entryPrice.toFixed(2)}`);
+              logger.info(`   Position will close when round ${round + 1} voting ends`);
+            } else {
+              logger.error(`❌ Trade execution failed: ${tradeResult.error}`);
+              // Fallback to simulation if real trade fails
+              // For simulation, we'll still keep it "open" conceptually
+              logger.warn('⚠️ Falling back to simulated trade');
+            }
+          } catch (error) {
+            logger.error('Error executing trade on Drift, falling back to simulation:', error);
+            // Fallback to simulation - position stays "open" conceptually
+          }
+        } else {
+          // No Drift service - simulate trade (but keep it "open" conceptually)
+          logger.warn('⚠️ Drift service not available - simulating trade');
+        }
       }
 
       // Store trade values as tenths (multiply by 10) to match database format
       const tradeLeverageStored = Math.round(chaosModifiers.leverage * 10);
       const tradePositionSizeStored = Math.round(chaosModifiers.positionSizePercentage * 10);
-      
+
       const trade = await this.prisma.trade.create({
         data: {
           runId,
@@ -627,25 +666,230 @@ export class RunService {
           leverage: tradeLeverageStored,
           positionSize: tradePositionSizeStored,
           entryPrice,
-          exitPrice: direction !== 'SKIP' ? exitPrice : null,
-          pnl,
-          pnlPercentage: run.totalPool > 0 ? (pnl / run.totalPool) * 100 : 0,
+          exitPrice: null, // Will be set when position closes
+          pnl: 0, // Will be calculated when position closes
+          pnlPercentage: 0, // Will be calculated when position closes
           executedAt: new Date(),
         },
       });
 
-      // Update run total pool
-      await this.prisma.run.update({
-        where: { id: runId },
-        data: {
-          totalPool: run.totalPool + pnl,
-        },
-      });
-
-      logger.info(`Trade executed: ${runId} - Round ${round} - ${direction} - ${chaosModifiers.leverage.toFixed(1)}x leverage - ${chaosModifiers.positionSizePercentage.toFixed(1)}% position - PnL: ${pnl.toFixed(2)} cents`);
+      // Don't update pool yet - will update when position closes
+      logger.info(`Trade opened: ${runId} - Round ${round} - ${direction} - ${chaosModifiers.leverage.toFixed(1)}x leverage - ${chaosModifiers.positionSizePercentage.toFixed(1)}% position`);
+      logger.info(`   Position will close when round ${round + 1} voting ends`);
       return trade;
     } catch (error) {
       logger.error('Error executing trade:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Close a position for a specific round
+   */
+  async closePosition(runId: string, round: number): Promise<Trade> {
+    try {
+      const run = await this.getRunById(runId);
+      if (!run) {
+        throw new AppError('Run not found', 404);
+      }
+
+      // Find the trade for this round
+      const trade = await this.prisma.trade.findFirst({
+        where: {
+          runId,
+          round,
+        },
+      });
+
+      if (!trade) {
+        throw new AppError(`Trade not found for round ${round}`, 404);
+      }
+
+      // If already closed, return it
+      if (trade.exitPrice !== null) {
+        logger.info(`Trade for round ${round} is already closed`);
+        return trade;
+      }
+
+      const entryPrice = Number(trade.entryPrice);
+      let exitPrice = entryPrice;
+      let pnl = 0;
+
+      // Close position on Drift if direction is not SKIP
+      if (trade.direction !== 'SKIP' && this.driftService) {
+        try {
+          const marketSymbol = run.tradingPair?.split('/')[0] + '-PERP' || 'SOL-PERP';
+          logger.info(`🔒 Closing position for round ${round} on Drift: ${marketSymbol}`);
+          
+          const closeResult = await this.driftService.closePosition(marketSymbol);
+          
+          if (closeResult.success) {
+            // Get current price for exit price
+            const currentPrice = await this.driftService.getMarketPrice(marketSymbol);
+            exitPrice = currentPrice;
+            
+            // Use PnL from closeResult if available, otherwise calculate it
+            if (closeResult.pnl !== undefined) {
+              pnl = Math.round(closeResult.pnl * 100); // Convert from USDC to cents
+            } else {
+              // Calculate position size in USDC at the time trade was opened
+              // We need to get the pool size when the trade was executed
+              // Get the voting round for this trade to find the pool size at that time
+              const votingRound = await this.prisma.votingRound.findFirst({
+                where: {
+                  runId,
+                  round,
+                },
+              });
+              
+              // Use the pool size from when the trade was executed (before this trade's PnL)
+              // We can calculate backwards: if we know the position size percentage and the actual position,
+              // but we don't have that stored. So we'll use the run's startingPool + sum of all previous trades' PnL
+              const previousTrades = await this.prisma.trade.findMany({
+                where: {
+                  runId,
+                  round: { lt: round },
+                  exitPrice: { not: null }, // Only closed trades
+                },
+              });
+              
+              const previousPnL = previousTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+              const poolAtTradeTime = run.startingPool + previousPnL;
+              
+              const leverage = trade.leverage / 10; // Convert from tenths
+              const positionSizePercent = trade.positionSize / 10; // Convert from tenths
+              const positionSizeCents = (poolAtTradeTime * positionSizePercent) / 100; // Position size in cents
+              
+              pnl = calculatePotentialPnL(
+                entryPrice,
+                exitPrice,
+                positionSizeCents, // Now in cents, as expected by calculatePotentialPnL
+                leverage,
+                trade.direction.toLowerCase() as 'long' | 'short'
+              );
+            }
+            logger.info(`✅ Position closed on Drift, Exit: $${exitPrice.toFixed(2)}, PnL: ${pnl.toFixed(2)} cents`);
+          } else {
+            logger.error(`❌ Failed to close position: ${closeResult.error}`);
+            // Fallback to simulation
+            exitPrice = entryPrice * (1 + (Math.random() - 0.5) * 0.1);
+            
+            // Get pool size at trade time
+            const previousTrades = await this.prisma.trade.findMany({
+              where: {
+                runId,
+                round: { lt: round },
+                exitPrice: { not: null },
+              },
+            });
+            const previousPnL = previousTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+            const poolAtTradeTime = run.startingPool + previousPnL;
+            
+            const leverage = trade.leverage / 10;
+            const positionSizePercent = trade.positionSize / 10;
+            const positionSizeCents = (poolAtTradeTime * positionSizePercent) / 100;
+            pnl = calculatePotentialPnL(
+              entryPrice,
+              exitPrice,
+              positionSizeCents, // In cents
+              leverage,
+              trade.direction.toLowerCase() as 'long' | 'short'
+            );
+          }
+        } catch (error) {
+          logger.error('Error closing position on Drift, using simulation:', error);
+          // Fallback to simulation
+          exitPrice = entryPrice * (1 + (Math.random() - 0.5) * 0.1);
+          
+          // Get pool size at trade time
+          const previousTrades = await this.prisma.trade.findMany({
+            where: {
+              runId,
+              round: { lt: round },
+              exitPrice: { not: null },
+            },
+          });
+          const previousPnL = previousTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+          const poolAtTradeTime = run.startingPool + previousPnL;
+          
+          const leverage = trade.leverage / 10;
+          const positionSizePercent = trade.positionSize / 10;
+          const positionSizeCents = (poolAtTradeTime * positionSizePercent) / 100;
+          pnl = calculatePotentialPnL(
+            entryPrice,
+            exitPrice,
+            positionSizeCents, // In cents
+            leverage,
+            trade.direction.toLowerCase() as 'long' | 'short'
+          );
+        }
+      } else {
+        // SKIP or no Drift service - simulate close
+        logger.warn('⚠️ Simulating position close (SKIP or no Drift service)');
+        exitPrice = entryPrice * (1 + (Math.random() - 0.5) * 0.1);
+        if (trade.direction !== 'SKIP') {
+          // Get pool size at trade time
+          const previousTrades = await this.prisma.trade.findMany({
+            where: {
+              runId,
+              round: { lt: round },
+              exitPrice: { not: null },
+            },
+          });
+          const previousPnL = previousTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+          const poolAtTradeTime = run.startingPool + previousPnL;
+          
+          const leverage = trade.leverage / 10;
+          const positionSizePercent = trade.positionSize / 10;
+          const positionSizeCents = (poolAtTradeTime * positionSizePercent) / 100;
+          pnl = calculatePotentialPnL(
+            entryPrice,
+            exitPrice,
+            positionSizeCents, // In cents
+            leverage,
+            trade.direction.toLowerCase() as 'long' | 'short'
+          );
+        }
+      }
+
+      // Update trade with exit price and PnL
+      const updatedTrade = await this.prisma.trade.update({
+        where: { id: trade.id },
+        data: {
+          exitPrice,
+          pnl,
+          pnlPercentage: run.totalPool > 0 ? (pnl / run.totalPool) * 100 : 0,
+          settledAt: new Date(),
+        },
+      });
+
+      // Update run total pool (clamp to 0 minimum - can't have negative pool)
+      const newTotalPool = Math.max(0, run.totalPool + pnl);
+      await this.prisma.run.update({
+        where: { id: runId },
+        data: {
+          totalPool: newTotalPool,
+        },
+      });
+      
+      // Log warning if pool would have gone negative
+      if (run.totalPool + pnl < 0) {
+        logger.warn(`⚠️ Pool would have gone negative for run ${runId}. Clamped to 0. Original: ${run.totalPool}, PnL: ${pnl}, New: ${newTotalPool}`);
+      }
+
+      // Broadcast trade update via WebSocket
+      if (this.wsService) {
+        this.wsService.broadcastTradeUpdate(runId, {
+          runId,
+          trade: updatedTrade,
+        });
+        logger.info(`📡 Broadcasted trade update for round ${round} via WebSocket`);
+      }
+
+      logger.info(`✅ Position closed for round ${round}: Entry $${entryPrice.toFixed(2)}, Exit $${exitPrice.toFixed(2)}, PnL: ${pnl.toFixed(2)} cents`);
+      return updatedTrade;
+    } catch (error) {
+      logger.error(`Error closing position for round ${round}:`, error);
       throw error;
     }
   }
@@ -662,6 +906,20 @@ export class RunService {
 
       if (run.status !== RunStatus.ACTIVE) {
         throw new AppError('Run is not active', 400);
+      }
+
+      // Close the last round's position if it's still open
+      const lastRound = run.currentRound || run.totalRounds;
+      const lastTrade = await this.prisma.trade.findFirst({
+        where: {
+          runId,
+          round: lastRound,
+        },
+      });
+
+      if (lastTrade && lastTrade.exitPrice === null) {
+        logger.info(`🔒 Closing last round's position (round ${lastRound}) before ending run`);
+        await this.closePosition(runId, lastRound);
       }
 
       // Calculate final shares for participants
