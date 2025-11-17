@@ -16,11 +16,25 @@ export class DriftIntegrationService {
     this.isRealTradingEnabled = driftConfig.enableRealTrading;
     this.mockDriftService = new MockDriftService();
 
+    logger.info(`📊 DriftIntegrationService config check:`);
+    logger.info(`   DRIFT_ENABLE_REAL_TRADING env: ${process.env.DRIFT_ENABLE_REAL_TRADING}`);
+    logger.info(`   driftConfig.enableRealTrading: ${driftConfig.enableRealTrading}`);
+    logger.info(`   isRealTradingEnabled: ${this.isRealTradingEnabled}`);
+
     if (this.isRealTradingEnabled) {
       logger.info('🔴 REAL TRADING MODE ENABLED - Drift Protocol');
-      this.realDriftService = new RealDriftService();
+      try {
+        this.realDriftService = new RealDriftService();
+        logger.info('✅ RealDriftService instance created');
+      } catch (error) {
+        logger.error('❌ Failed to create RealDriftService:', error);
+        logger.warn('⚠️  Falling back to MOCK TRADING MODE');
+        this.isRealTradingEnabled = false;
+        this.realDriftService = null;
+      }
     } else {
       logger.info('🟡 MOCK TRADING MODE - Simulated trades only');
+      logger.info(`   Reason: DRIFT_ENABLE_REAL_TRADING is not 'true'`);
     }
   }
 
@@ -29,10 +43,25 @@ export class DriftIntegrationService {
    */
   async initialize(): Promise<void> {
     if (this.isRealTradingEnabled && this.realDriftService) {
-      await this.realDriftService.initialize();
-      logger.info('✅ Real Drift service initialized');
+      try {
+        logger.info('🔄 Initializing Real Drift service...');
+        await this.realDriftService.initialize();
+        logger.info('✅ Real Drift service initialized successfully');
+      } catch (error) {
+        logger.error('❌ Failed to initialize Real Drift service:', error);
+        logger.error('   Error details:', error instanceof Error ? error.message : String(error));
+        logger.warn('⚠️  Real trading will be disabled. Falling back to mock mode.');
+        this.isRealTradingEnabled = false;
+        // Don't throw - allow app to continue with mock mode
+      }
     } else {
       logger.info('✅ Mock Drift service active');
+      if (!this.isRealTradingEnabled) {
+        logger.info('   Reason: DRIFT_ENABLE_REAL_TRADING is not enabled');
+      }
+      if (!this.realDriftService) {
+        logger.info('   Reason: RealDriftService instance not available');
+      }
     }
   }
 
@@ -48,7 +77,10 @@ export class DriftIntegrationService {
     error?: string;
   }> {
     try {
+      logger.info(`🔍 executeTrade called - isRealTradingEnabled: ${this.isRealTradingEnabled}, realDriftService exists: ${!!this.realDriftService}`);
+      
       if (this.isRealTradingEnabled && this.realDriftService) {
+        logger.info('🚀 Executing REAL trade on Drift Protocol');
         // Execute real trade on Drift
         const tx = await this.realDriftService.openPosition(params);
         
@@ -58,6 +90,7 @@ export class DriftIntegrationService {
           entryPrice: await this.realDriftService.getOraclePrice(params.marketSymbol),
         };
       } else {
+        logger.warn('⚠️  Executing MOCK trade (real trading not enabled or service unavailable)');
         // Execute mock trade
         const mockResult = await this.mockDriftService.executeTrade({
           direction: params.direction,
