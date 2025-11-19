@@ -63,6 +63,7 @@ export class RunService {
           coin: data.coin,
           duration: data.duration || config.defaultRunDurationMinutes,
           votingInterval: data.votingInterval || config.defaultVotingIntervalMinutes,
+          lobbyDuration: data.lobbyDuration || parseInt(process.env.LOBBY_DURATION_MINUTES || '10', 10),
           minDeposit: (data.minDeposit || config.minDepositUsdc) * 100, // Convert to cents
           maxDeposit: (data.maxDeposit || config.maxDepositUsdc) * 100, // Convert to cents
           maxParticipants: data.maxParticipants || config.maxParticipantsPerRun,

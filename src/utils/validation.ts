@@ -19,6 +19,7 @@ export const createRunSchema = Joi.object({
   coin: Joi.string().required().min(2).max(10),
   duration: Joi.number().integer().min(60).max(480).optional(), // 1-8 hours
   votingInterval: Joi.number().integer().min(5).max(60).optional(), // 5-60 minutes
+  lobbyDuration: Joi.number().integer().min(1).max(60).optional(), // 1-60 minutes (lobby phase duration)
   minDeposit: Joi.number().integer().min(10).max(100).optional(), // 10-100 USDC
   maxDeposit: Joi.number().integer().min(10).max(100).optional(), // 10-100 USDC
   maxParticipants: Joi.number().integer().min(10).max(100).optional(),

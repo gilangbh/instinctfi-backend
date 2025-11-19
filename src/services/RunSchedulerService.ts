@@ -102,7 +102,10 @@ export class RunSchedulerService {
     try {
       const now = new Date();
       const createdAt = new Date(run.createdAt);
-      const scheduledStartTime = new Date(createdAt.getTime() + this.LOBBY_DURATION_MS);
+      // Use per-run lobby duration if available, otherwise fall back to env var
+      const lobbyDurationMinutes = run.lobbyDuration || parseInt(process.env.LOBBY_DURATION_MINUTES || '10', 10);
+      const lobbyDurationMs = lobbyDurationMinutes * 60 * 1000;
+      const scheduledStartTime = new Date(createdAt.getTime() + lobbyDurationMs);
       const timeUntilStart = scheduledStartTime.getTime() - now.getTime();
 
       // Calculate countdown in seconds
@@ -326,7 +329,7 @@ export class RunSchedulerService {
   async getCountdown(runId: string): Promise<number> {
     const run = await this.prisma.run.findUnique({
       where: { id: runId },
-      select: { countdown: true, status: true, createdAt: true },
+      select: { countdown: true, status: true, createdAt: true, lobbyDuration: true },
     });
 
     if (!run || run.status !== RunStatus.WAITING) {
@@ -340,7 +343,10 @@ export class RunSchedulerService {
 
     // Fallback: calculate from createdAt
     const createdAt = new Date(run.createdAt);
-    const scheduledStartTime = new Date(createdAt.getTime() + this.LOBBY_DURATION_MS);
+    // Use per-run lobby duration if available, otherwise fall back to env var
+    const lobbyDurationMinutes = run.lobbyDuration || parseInt(process.env.LOBBY_DURATION_MINUTES || '10', 10);
+    const lobbyDurationMs = lobbyDurationMinutes * 60 * 1000;
+    const scheduledStartTime = new Date(createdAt.getTime() + lobbyDurationMs);
     const timeUntilStart = scheduledStartTime.getTime() - Date.now();
     return Math.max(0, Math.floor(timeUntilStart / 1000));
   }

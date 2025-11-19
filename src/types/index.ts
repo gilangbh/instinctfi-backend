@@ -131,6 +131,7 @@ export interface CreateRunRequest {
   coin: string;
   duration?: number;
   votingInterval?: number;
+  lobbyDuration?: number; // in minutes (lobby phase duration)
   minDeposit?: number;
   maxDeposit?: number;
   maxParticipants?: number;

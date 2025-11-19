@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "runs" ADD COLUMN "lobbyDuration" INTEGER NOT NULL DEFAULT 10;
