@@ -117,20 +117,28 @@ export class DriftIntegrationService {
     success: boolean;
     transactionId?: string;
     pnl?: number;
+    entryPrice?: number;
+    exitPrice?: number;
     error?: string;
   }> {
     try {
       if (this.isRealTradingEnabled && this.realDriftService) {
-        // Get position info before closing for PnL
+        // Get position info before closing for PnL and prices
         const positions = await this.realDriftService.getPositions();
         const position = positions.find(p => p.marketSymbol === marketSymbol);
+        
+        const entryPrice = position?.entryPrice;
+        const exitPrice = position?.currentPrice;
+        const unrealizedPnl = position?.unrealizedPnl || 0;
         
         const tx = await this.realDriftService.closePosition(marketSymbol);
         
         return {
           success: true,
           transactionId: tx,
-          pnl: position?.unrealizedPnl || 0,
+          pnl: unrealizedPnl,
+          entryPrice,
+          exitPrice,
         };
       } else {
         // Mock close
@@ -160,6 +168,16 @@ export class DriftIntegrationService {
     
     // Fallback to Binance prices
     return await this.mockDriftService.getMarketPrice(symbol);
+  }
+
+  /**
+   * Get wallet address
+   */
+  getWalletAddress(): string | null {
+    if (this.isRealTradingEnabled && this.realDriftService) {
+      return this.realDriftService.getWalletAddress();
+    }
+    return null;
   }
 
   /**

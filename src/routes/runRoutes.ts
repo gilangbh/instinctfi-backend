@@ -39,6 +39,11 @@ export const createRunRoutes = (runController: RunController, authMiddleware: Au
   );
 
   router.get(
+    '/:id/trades/:round/unrealized-pnl',
+    runController.getUnrealizedPnL
+  );
+
+  router.get(
     '/:id/voting-round',
     runController.getCurrentVotingRound
   );

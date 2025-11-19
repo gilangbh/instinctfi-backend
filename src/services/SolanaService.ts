@@ -293,6 +293,148 @@ export class SolanaService {
   }
 
   /**
+   * Get PDA for trade record
+   */
+  getTradeRecordPDA(runId: number, round: number): [PublicKey, number] {
+    return PublicKey.findProgramAddressSync(
+      [
+        Buffer.from('trade'),
+        new BN(runId).toArrayLike(Buffer, 'le', 8),
+        Buffer.from([round]),
+      ],
+      this.programId
+    );
+  }
+
+  /**
+   * Record a trade on-chain
+   */
+  async recordTrade(params: {
+    runId: number;
+    round: number;
+    direction: 'LONG' | 'SHORT' | 'SKIP';
+    entryPrice: number;  // In USDC (will be converted to micro-USDC)
+    exitPrice: number | null;  // In USDC (0 if still open)
+    pnl: number;  // In USDC (will be converted to micro-USDC, can be negative)
+    leverage: number;  // As decimal (e.g., 2.6x will be converted to 26)
+    positionSizePercent: number;  // As decimal (e.g., 96.1% will be converted to 96)
+  }): Promise<string> {
+    try {
+      const [platformPDA] = this.getPlatformPDA();
+      const [runPDA] = this.getRunPDA(params.runId);
+      const [tradeRecordPDA] = this.getTradeRecordPDA(params.runId, params.round);
+
+      // Convert prices to micro-USDC (6 decimals)
+      const entryPriceMicro = new BN(Math.floor(params.entryPrice * 1_000_000));
+      const exitPriceMicro = new BN(params.exitPrice ? Math.floor(params.exitPrice * 1_000_000) : 0);
+      
+      // Convert PnL to micro-USDC (can be negative)
+      const pnlMicro = new BN(Math.floor(params.pnl * 1_000_000));
+      
+      // Convert leverage from decimal to integer (e.g., 2.6 -> 26, 1.0 -> 10)
+      const leverageInt = Math.round(params.leverage * 10);
+      if (leverageInt < 10 || leverageInt > 200) {
+        throw new AppError(`Invalid leverage: ${params.leverage} (must be between 1.0x and 20.0x)`, 400);
+      }
+      
+      // Convert position size from decimal to integer (e.g., 96.1 -> 96, 50.0 -> 50)
+      const positionSizeInt = Math.round(params.positionSizePercent);
+      if (positionSizeInt < 10 || positionSizeInt > 100) {
+        throw new AppError(`Invalid position size: ${params.positionSizePercent}% (must be between 10% and 100%)`, 400);
+      }
+
+      // Map direction string to enum variant (0 = Long, 1 = Short, 2 = Skip)
+      let directionVariant: number;
+      switch (params.direction.toUpperCase()) {
+        case 'LONG':
+          directionVariant = 0;
+          break;
+        case 'SHORT':
+          directionVariant = 1;
+          break;
+        case 'SKIP':
+          directionVariant = 2;
+          break;
+        default:
+          throw new AppError(`Invalid direction: ${params.direction}`, 400);
+      }
+
+      // Build instruction data manually
+      // Discriminator for record_trade from IDL: [83, 201, 2, 171, 223, 122, 186, 127]
+      const discriminator = Buffer.from([83, 201, 2, 171, 223, 122, 186, 127]);
+      
+      const runIdBuf = Buffer.alloc(8);
+      new BN(params.runId).toArrayLike(Buffer, 'le', 8).copy(runIdBuf);
+      
+      const roundBuf = Buffer.alloc(1);
+      roundBuf.writeUInt8(params.round, 0);
+      
+      const directionBuf = Buffer.alloc(1);
+      directionBuf.writeUInt8(directionVariant, 0);
+      
+      const entryPriceBuf = Buffer.alloc(8);
+      entryPriceMicro.toArrayLike(Buffer, 'le', 8).copy(entryPriceBuf);
+      
+      const exitPriceBuf = Buffer.alloc(8);
+      exitPriceMicro.toArrayLike(Buffer, 'le', 8).copy(exitPriceBuf);
+      
+      // PnL is i64 (signed), so we need to handle negative values
+      const pnlBuf = Buffer.alloc(8);
+      if (pnlMicro.isNeg()) {
+        // For negative, we need to convert to two's complement
+        const absValue = pnlMicro.abs();
+        const complement = new BN(2).pow(new BN(64)).sub(absValue);
+        complement.toArrayLike(Buffer, 'le', 8).copy(pnlBuf);
+      } else {
+        pnlMicro.toArrayLike(Buffer, 'le', 8).copy(pnlBuf);
+      }
+      
+      const leverageBuf = Buffer.alloc(1);
+      leverageBuf.writeUInt8(leverageInt, 0);
+      
+      const positionSizeBuf = Buffer.alloc(1);
+      positionSizeBuf.writeUInt8(positionSizeInt, 0);
+      
+      const data = Buffer.concat([
+        discriminator,
+        runIdBuf,
+        roundBuf,
+        directionBuf,
+        entryPriceBuf,
+        exitPriceBuf,
+        pnlBuf,
+        leverageBuf,
+        positionSizeBuf,
+      ]);
+
+      // Build transaction
+      const instruction = new TransactionInstruction({
+        keys: [
+          { pubkey: platformPDA, isSigner: false, isWritable: false },
+          { pubkey: runPDA, isSigner: false, isWritable: false },
+          { pubkey: tradeRecordPDA, isSigner: false, isWritable: true },
+          { pubkey: this.wallet.publicKey, isSigner: true, isWritable: true },
+          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        ],
+        programId: this.programId,
+        data,
+      });
+
+      const tx = new Transaction().add(instruction);
+      const signature = await this.provider.sendAndConfirm(tx);
+
+      logger.info(`✅ Trade recorded on-chain: Run ID ${params.runId}, Round ${params.round}, TX: ${signature}`);
+      logger.info(`   Direction: ${params.direction}, Entry: $${params.entryPrice}, Exit: $${params.exitPrice || 'Open'}, PnL: $${params.pnl}`);
+      return signature;
+    } catch (error) {
+      logger.error('Error recording trade on-chain:', error);
+      // Don't throw - allow trading to continue even if on-chain recording fails
+      logger.warn('⚠️  Trade execution succeeded but on-chain recording failed. Trade will continue.');
+      throw error; // Re-throw for now, but you might want to make this non-blocking
+    }
+  }
+
+  /**
    * Fetch run data from on-chain
    * NOTE: Not implemented - use Solana RPC getAccountInfo instead
    */

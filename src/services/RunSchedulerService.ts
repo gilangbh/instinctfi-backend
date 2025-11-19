@@ -151,19 +151,8 @@ export class RunSchedulerService {
         },
       });
 
-      // Create first voting round
-      await this.prisma.votingRound.create({
-        data: {
-          runId: run.id,
-          round: 1,
-          status: 'OPEN',
-          timeRemaining: run.votingInterval * 60, // Convert to seconds
-          leverage: 1.0, // Default, will be randomized later
-          positionSize: 50.0, // Default 50% of pool
-          currentPrice: 0, // Will be updated when voting opens
-          priceChange24h: 0, // Will be updated
-        },
-      });
+      // Create first voting round with chaos modifiers generated
+      await this.runService.createVotingRound(run.id, 1);
 
       logger.info(`✅ Run ${run.id} started successfully`);
       logger.info(`   Participants: ${run.participants?.length}`);

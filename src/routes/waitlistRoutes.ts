@@ -14,3 +14,6 @@ export const createWaitlistRoutes = (waitlistController: WaitlistController): Ro
 
 
 
+
+
+
