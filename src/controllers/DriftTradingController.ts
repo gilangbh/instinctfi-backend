@@ -150,10 +150,14 @@ export class DriftTradingController {
     try {
       const driftService = await getDriftService();
       const accountInfo = await driftService.getAccountInfo();
+      const walletAddress = driftService.getWalletAddress();
 
       res.status(200).json({
         success: true,
-        data: accountInfo,
+        data: {
+          ...accountInfo,
+          walletAddress: walletAddress || 'N/A (mock mode)',
+        },
       });
 
     } catch (error) {

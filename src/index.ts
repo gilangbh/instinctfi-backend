@@ -42,6 +42,9 @@ console.log('✅ RunSchedulerService imported');
 import { DriftService } from '@/services/DriftService';
 console.log('✅ DriftService imported');
 
+import { DriftIntegrationService } from '@/services/DriftIntegrationService';
+console.log('✅ DriftIntegrationService imported');
+
 import { WaitlistService } from '@/services/WaitlistService';
 console.log('✅ WaitlistService imported');
 
@@ -152,8 +155,19 @@ class App {
       logger.info('Creating UserService...');
       const userService = new UserService(this.prisma);
       
+      logger.info('Creating DriftIntegrationService...');
+      const driftIntegrationService = new DriftIntegrationService();
+      // Initialize async - will be awaited in start() method
+      driftIntegrationService.initialize().then(() => {
+        logger.info('✅ DriftIntegrationService initialization completed');
+      }).catch((error) => {
+        logger.error('❌ Failed to initialize DriftIntegrationService:', error);
+        logger.error('   Error details:', error instanceof Error ? error.message : String(error));
+        logger.error('   Stack:', error instanceof Error ? error.stack : 'No stack trace');
+      });
+      
       logger.info('Creating RunService...');
-      const runService = new RunService(this.prisma, undefined, this.wsServer);
+      const runService = new RunService(this.prisma, undefined, this.wsServer, driftIntegrationService);
       
       logger.info('Creating DriftService...');
       const driftService = new DriftService();

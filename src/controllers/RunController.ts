@@ -277,6 +277,39 @@ export class RunController {
   };
 
   /**
+   * Get unrealized PnL for an open trade
+   */
+  getUnrealizedPnL = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id, round } = req.params;
+      const roundNum = parseInt(round, 10);
+      
+      if (isNaN(roundNum)) {
+        const response: ApiResponse = {
+          success: false,
+          error: 'Invalid round number',
+        };
+        res.status(400).json(response);
+        return;
+      }
+
+      const unrealizedPnL = await this.runService.getUnrealizedPnL(id, roundNum);
+
+      const response: ApiResponse = {
+        success: true,
+        data: {
+          unrealizedPnL,
+        },
+      };
+
+      res.json(response);
+    } catch (error) {
+      logger.error('Error in getUnrealizedPnL controller:', error);
+      this.handleError(error, res);
+    }
+  };
+
+  /**
    * Get current voting round
    */
   getCurrentVotingRound = async (req: Request, res: Response): Promise<void> => {

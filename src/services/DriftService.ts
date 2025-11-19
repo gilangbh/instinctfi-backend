@@ -339,8 +339,13 @@ export class DriftService {
 
   /**
    * Fallback prices (used when API fails)
+   * NOTE: This should only be used as a last resort. Real prices should come from Drift or Binance.
+   * TODO: Remove this fallback and make price fetching fail instead of using hardcoded values.
    */
   private getFallbackPrice(symbol: string): number {
+    logger.error(`⚠️ CRITICAL: Using hardcoded fallback price for ${symbol}. This should not happen in production!`);
+    logger.error(`   Please ensure Drift service is properly configured and Binance API is accessible.`);
+    // Still return a fallback to prevent crashes, but log the error
     const fallbackPrices: { [key: string]: number } = {
       'SOL': 150.0,
       'BTC': 45000.0,
@@ -472,7 +477,23 @@ export class DriftService {
     }
 
     // Simulate trade execution
-    const entryPrice = 150.0; // Mock entry price
+    // NOTE: In mock mode, we should still try to get real prices if possible
+    // For now, we'll use a placeholder that should be replaced with real price fetching
+    logger.warn('⚠️ Using mock trade execution - entry price should come from real market data');
+    let entryPrice = 150.0; // Placeholder - should be fetched from market
+    try {
+      // Try to get real price even in mock mode
+      const realPrice = await this.getMarketPrice('SOL');
+      if (realPrice && realPrice > 0) {
+        entryPrice = realPrice;
+        logger.info(`✅ Using real market price for mock trade: $${entryPrice.toFixed(2)}`);
+      } else {
+        logger.warn(`⚠️ Could not fetch real price, using placeholder $${entryPrice.toFixed(2)}`);
+      }
+    } catch (error) {
+      logger.warn(`⚠️ Error fetching real price for mock trade, using placeholder: ${error}`);
+    }
+    
     const priceChange = (Math.random() - 0.5) * 0.1; // Random price change
     const exitPrice = entryPrice * (1 + priceChange);
     

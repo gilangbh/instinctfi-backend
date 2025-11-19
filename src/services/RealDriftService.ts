@@ -213,32 +213,43 @@ export class RealDriftService {
 
       let baseAssetAmount: BN;
 
-      // If leverage is specified, calculate position size to achieve target leverage
+      // IMPORTANT: params.baseAmount is in USDC (quote currency), not SOL (base currency)
+      // We need to convert USDC value to base asset amount (SOL for SOL-PERP)
+      // Drift perp positions use USDC as collateral, so we need to ensure we have enough USDC
+      
+      const usdcValue = params.baseAmount; // This is the USDC value we want to trade
+      
+      // Get current price
+      const currentPrice = await this.getOraclePrice(params.marketSymbol);
+      
       if (params.leverage && params.leverage > 1) {
-        // Get available collateral
-        const freeCollateral = this.user.getFreeCollateral().toNumber() / 1e6; // QUOTE_PRECISION
+        // When leverage is specified, baseAmount represents the USDC collateral we want to use
+        // Calculate leveraged position value in USDC
+        const leveragedPositionValue = usdcValue * params.leverage;
         
-        // Get current price
-        const currentPrice = await this.getOraclePrice(params.marketSymbol);
-        
-        // Calculate leveraged position value
-        const leveragedPositionValue = freeCollateral * params.leverage;
-        
-        // Convert to base asset amount
+        // Convert leveraged USDC value to base asset amount (SOL)
         const calculatedBaseAmount = leveragedPositionValue / currentPrice;
-        baseAssetAmount = new BN(calculatedBaseAmount * 1e9);
+        baseAssetAmount = new BN(calculatedBaseAmount * 1e9); // BASE_PRECISION is 1e9
         
         logger.info(`Opening ${params.direction} position with ${params.leverage}x leverage:`, {
-          freeCollateral: `$${freeCollateral.toFixed(2)}`,
+          usdcCollateral: `$${usdcValue.toFixed(2)}`,
           currentPrice: `$${currentPrice.toFixed(2)}`,
           leveragedValue: `$${leveragedPositionValue.toFixed(2)}`,
-          baseAmount: calculatedBaseAmount.toFixed(4),
+          baseAmountSOL: calculatedBaseAmount.toFixed(4),
           marketSymbol: params.marketSymbol,
         });
       } else {
-        // Use specified base amount directly (for backward compatibility)
-        baseAssetAmount = new BN(params.baseAmount * 1e9);
-        logger.info(`Opening ${params.direction} position: ${params.baseAmount} ${params.marketSymbol}`);
+        // When no leverage, baseAmount is USDC value - convert to base asset (SOL)
+        const calculatedBaseAmount = usdcValue / currentPrice;
+        baseAssetAmount = new BN(calculatedBaseAmount * 1e9);
+        logger.info(`Opening ${params.direction} position: $${usdcValue.toFixed(2)} USDC = ${calculatedBaseAmount.toFixed(4)} SOL`);
+      }
+      
+      // Ensure we have enough USDC collateral (check free collateral)
+      const freeCollateral = this.user.getFreeCollateral().toNumber() / 1e6; // Convert from QUOTE_PRECISION
+      if (freeCollateral < usdcValue) {
+        logger.warn(`⚠️  Warning: Free collateral ($${freeCollateral.toFixed(2)}) is less than required ($${usdcValue.toFixed(2)})`);
+        logger.warn(`   Position may fail or use less than requested amount`);
       }
 
       // Place market order (official pattern from Drift docs)
@@ -365,6 +376,13 @@ export class RealDriftService {
       logger.error('Failed to get positions from Drift:', error);
       throw error;
     }
+  }
+
+  /**
+   * Get wallet public key
+   */
+  getWalletAddress(): string {
+    return this.wallet.publicKey.toString();
   }
 
   /**
