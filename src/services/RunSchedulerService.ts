@@ -18,10 +18,15 @@ export class RunSchedulerService {
   private readonly LOBBY_DURATION_MS = (parseInt(process.env.LOBBY_DURATION_MINUTES || '10')) * 60 * 1000; // Configurable via env
   private readonly CHECK_INTERVAL_MS = 5 * 1000; // Check every 5 seconds
 
+  private solanaService: SolanaService | null = null;
+
   constructor(
     private prisma: PrismaClient,
-    private runService: RunService
-  ) {}
+    private runService: RunService,
+    solanaService?: SolanaService
+  ) {
+    this.solanaService = solanaService || null;
+  }
 
   /**
    * Start the scheduler
@@ -158,8 +163,17 @@ export class RunSchedulerService {
       logger.info(`   Participants: ${run.participants?.length}`);
       logger.info(`   Starting pool: ${run.totalPool / 100} USDC`);
 
-      // TODO: Start run on-chain via SolanaService
-      // await this.solanaService.startRun(runNumericId);
+      // Start run on-chain via SolanaService
+      const runNumericId = parseInt(run.id) || Date.now();
+      if (this.solanaService) {
+        try {
+          const startTx = await this.solanaService.startRun(runNumericId);
+          logger.info(`✅ Run started on-chain: ${startTx}`);
+        } catch (solanaError) {
+          logger.error('⚠️  Failed to start run on-chain (non-blocking):', solanaError);
+          // Continue anyway - the DB state is source of truth
+        }
+      }
 
     } catch (error) {
       logger.error(`Error starting run ${run.id}:`, error);

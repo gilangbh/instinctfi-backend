@@ -69,6 +69,9 @@ console.log('Importing WebSocket...');
 import { WebSocketService } from '@/services/WebSocketService';
 console.log('✅ WebSocket imported');
 
+import { SolanaService } from '@/services/SolanaService';
+console.log('✅ SolanaService imported');
+
 console.log('🎉 ALL IMPORTS SUCCESSFUL!');
 
 class App {
@@ -166,8 +169,18 @@ class App {
         logger.error('   Stack:', error instanceof Error ? error.stack : 'No stack trace');
       });
       
+      logger.info('Creating SolanaService...');
+      let solanaService: SolanaService | undefined;
+      try {
+        solanaService = new SolanaService();
+        logger.info('✅ SolanaService created successfully');
+      } catch (error) {
+        logger.warn('⚠️  SolanaService creation failed (blockchain features disabled):', error);
+        solanaService = undefined;
+      }
+      
       logger.info('Creating RunService...');
-      const runService = new RunService(this.prisma, undefined, this.wsServer, driftIntegrationService);
+      const runService = new RunService(this.prisma, solanaService, this.wsServer, driftIntegrationService);
       
       logger.info('Creating DriftService...');
       const driftService = new DriftService();
@@ -177,7 +190,7 @@ class App {
 
       // Initialize and start run scheduler
       logger.info('Creating RunSchedulerService...');
-      this.runScheduler = new RunSchedulerService(this.prisma, runService);
+      this.runScheduler = new RunSchedulerService(this.prisma, runService, solanaService);
       
       logger.info('Starting RunScheduler...');
       this.runScheduler.start();

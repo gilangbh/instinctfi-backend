@@ -315,11 +315,113 @@ export class SolanaService {
   }
 
   /**
-   * Start a run
-   * NOTE: Not currently used - manual transaction building would be needed
+   * Start a run on-chain (sets status to Active)
    */
   async startRun(runId: number): Promise<string> {
-    throw new AppError('startRun not implemented with manual transactions', 501);
+    try {
+      const [platformPDA] = this.getPlatformPDA();
+      const [runPDA] = this.getRunPDA(runId);
+
+      logger.info(`📝 Starting run on-chain:`);
+      logger.info(`   Run ID: ${runId}`);
+      logger.info(`   Platform PDA: ${platformPDA.toString()}`);
+      logger.info(`   Run PDA: ${runPDA.toString()}`);
+      logger.info(`   Program ID: ${this.programId.toString()}`);
+      logger.info(`   Authority: ${this.wallet.publicKey.toString()}`);
+
+      // Check if platform account exists
+      try {
+        const platformAccount = await this.connection.getAccountInfo(platformPDA);
+        if (!platformAccount) {
+          throw new AppError(
+            `Platform account does not exist at ${platformPDA.toString()}. Please initialize the platform first.`,
+            400
+          );
+        }
+        logger.info(`   ✅ Platform account exists`);
+      } catch (error) {
+        logger.error(`   ❌ Platform account check failed:`, error);
+        throw error;
+      }
+
+      // Check if run account exists
+      try {
+        const runAccount = await this.connection.getAccountInfo(runPDA);
+        if (!runAccount) {
+          throw new AppError(
+            `Run account does not exist at ${runPDA.toString()}. Please create the run first.`,
+            400
+          );
+        }
+        logger.info(`   ✅ Run account exists`);
+      } catch (error) {
+        logger.error(`   ❌ Run account check failed:`, error);
+        throw error;
+      }
+
+      // Build instruction data manually
+      // Discriminator for start_run: [72, 212, 1, 91, 61, 186, 2, 52]
+      const discriminator = Buffer.from([72, 212, 1, 91, 61, 186, 2, 52]);
+      
+      const runIdBuf = Buffer.alloc(8);
+      new BN(runId).toArrayLike(Buffer, 'le', 8).copy(runIdBuf);
+      
+      const data = Buffer.concat([discriminator, runIdBuf]);
+
+      // Build transaction
+      const instruction = new TransactionInstruction({
+        keys: [
+          { pubkey: platformPDA, isSigner: false, isWritable: false },
+          { pubkey: runPDA, isSigner: false, isWritable: true },
+          { pubkey: this.wallet.publicKey, isSigner: true, isWritable: false },
+        ],
+        programId: this.programId,
+        data,
+      });
+
+      const tx = new Transaction().add(instruction);
+      
+      // Check wallet balance before sending
+      const balance = await this.connection.getBalance(this.wallet.publicKey);
+      logger.info(`   Wallet balance: ${balance / 1e9} SOL`);
+      if (balance < 0.001 * 1e9) {
+        logger.warn(`   ⚠️  Low wallet balance! May not have enough for transaction fees.`);
+      }
+
+      logger.info(`   Sending transaction...`);
+      const signature = await this.provider.sendAndConfirm(tx, [], {
+        commitment: 'confirmed',
+        skipPreflight: false,
+      });
+
+      logger.info(`✅ Run started on-chain: Run ID ${runId}, TX: ${signature}`);
+      logger.info(`   Run PDA: ${runPDA.toString()}`);
+      logger.info(`   View on Solana Explorer: https://explorer.solana.com/tx/${signature}?cluster=${solanaConfig.network}`);
+      return signature;
+    } catch (error) {
+      logger.error('❌ Error starting run on-chain:');
+      logger.error('   Error type:', error instanceof Error ? error.constructor.name : typeof error);
+      logger.error('   Error message:', error instanceof Error ? error.message : String(error));
+      if (error instanceof Error && error.stack) {
+        logger.error('   Stack trace:', error.stack);
+      }
+      // Log additional error details if available
+      if (error && typeof error === 'object') {
+        const errorDetails: any = {};
+        Object.getOwnPropertyNames(error).forEach(key => {
+          try {
+            errorDetails[key] = (error as any)[key];
+          } catch {
+            // Skip properties that can't be serialized
+          }
+        });
+        logger.error('   Error details:', JSON.stringify(errorDetails, null, 2));
+      }
+      throw error instanceof AppError ? error : new AppError(
+        `Failed to start run on-chain: ${error instanceof Error ? error.message : String(error)}`,
+        500
+      );
+    }
   }
 
   /**
