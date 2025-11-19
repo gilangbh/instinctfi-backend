@@ -34,6 +34,22 @@ async function main() {
     process.exit(1);
   }
 
+  // Check if DATABASE_URL uses internal Railway hostname (not accessible from local machine)
+  const usesInternalHostname = dbUrl.includes('postgres.railway.internal') || dbUrl.includes('railway.internal');
+  
+  if (usesInternalHostname && !process.env.DATABASE_PRIVATE_URL) {
+    console.error('⚠️  Warning: DATABASE_URL uses Railway internal hostname which is not accessible from your local machine.\n');
+    console.log('📝 To fix this, set DATABASE_PRIVATE_URL in Railway Dashboard:\n');
+    console.log('1. Go to: https://railway.app/\n');
+    console.log('2. Select your project → PostgreSQL service\n');
+    console.log('3. Go to "Variables" tab\n');
+    console.log('4. Find "DATABASE_PRIVATE_URL" or add it with value: ${{Postgres.DATABASE_PRIVATE_URL}}\n');
+    console.log('5. Or copy the "Connection URL" (public URL) from PostgreSQL service\n');
+    console.log('6. Add it as DATABASE_PRIVATE_URL in your backend service variables\n');
+    console.log('7. Then run this script again\n');
+    process.exit(1);
+  }
+
   // Mask sensitive parts of DATABASE_URL for logging
   const maskedUrl = dbUrl.replace(/:([^:@]+)@/, ':****@').replace(/@([^:]+):/, '@****:');
   const urlType = process.env.DATABASE_PRIVATE_URL ? 'DATABASE_PRIVATE_URL (public)' : 'DATABASE_URL';
