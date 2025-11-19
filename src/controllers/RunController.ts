@@ -66,11 +66,12 @@ export class RunController {
       let runs = await this.runService.getActiveRuns();
       
       // Add countdown to each waiting run
-      const lobbyDurationMs = (parseInt(process.env.LOBBY_DURATION_MINUTES || '10')) * 60 * 1000;
       runs = runs.map((run: any) => {
         if (run.status === 'WAITING' && run.countdown === null) {
-          // Calculate countdown from createdAt
+          // Calculate countdown from createdAt + per-run lobby duration
           const createdAt = new Date(run.createdAt);
+          const lobbyDurationMinutes = run.lobbyDuration || parseInt(process.env.LOBBY_DURATION_MINUTES || '10', 10);
+          const lobbyDurationMs = lobbyDurationMinutes * 60 * 1000;
           const scheduledStart = new Date(createdAt.getTime() + lobbyDurationMs);
           const timeUntilStart = scheduledStart.getTime() - Date.now();
           run.countdown = Math.max(0, Math.floor(timeUntilStart / 1000));
