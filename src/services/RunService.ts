@@ -95,7 +95,16 @@ export class RunService {
         logger.info(`   Vault TX: ${vaultTx}`);
         } catch (solanaError) {
           // If blockchain creation fails, we should handle it
-          logger.error('Failed to create run on-chain, but DB entry created:', solanaError);
+          logger.error('❌ Failed to create run on-chain, but DB entry created');
+          logger.error('   Error type:', solanaError instanceof Error ? solanaError.constructor.name : typeof solanaError);
+          logger.error('   Error message:', solanaError instanceof Error ? solanaError.message : String(solanaError));
+          if (solanaError instanceof Error && solanaError.stack) {
+            logger.error('   Stack trace:', solanaError.stack);
+          }
+          // Log additional error details if available
+          if (solanaError && typeof solanaError === 'object') {
+            logger.error('   Error details:', JSON.stringify(solanaError, Object.getOwnPropertyNames(solanaError), 2));
+          }
           // Optionally: Delete the DB entry or mark as failed
           // For now, we'll let it exist but log the error
         }
