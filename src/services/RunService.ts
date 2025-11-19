@@ -747,6 +747,7 @@ export class RunService {
       logger.info(`   Position will close when round ${round + 1} voting ends`);
 
       // Record trade on-chain (non-blocking - don't fail if this fails)
+      const runNumericId = parseInt(runId) || Date.now();
       if (this.solanaService && runNumericId) {
         try {
           await this.solanaService.recordTrade({
@@ -801,14 +802,14 @@ export class RunService {
         return trade;
       }
 
-      const entryPrice = Number(trade.entryPrice);
+      let entryPrice = Number(trade.entryPrice);
       let exitPrice = entryPrice;
       let pnl = 0;
+      const marketSymbol = run.tradingPair?.split('/')[0] + '-PERP' || 'SOL-PERP';
 
       // Close position on Drift if direction is not SKIP
       if (trade.direction !== 'SKIP' && this.driftService) {
         try {
-          const marketSymbol = run.tradingPair?.split('/')[0] + '-PERP' || 'SOL-PERP';
           logger.info(`🔒 Closing position for round ${round} on Drift: ${marketSymbol}`);
           
           const closeResult = await this.driftService.closePosition(marketSymbol);
@@ -947,11 +948,15 @@ export class RunService {
           exitPrice = entryPrice; // No price change for SKIP
         } else {
           logger.warn('⚠️ No Drift service available, trying to get market price');
-          try {
-            exitPrice = await this.driftService.getMarketPrice(marketSymbol);
-            logger.info(`✅ Using market price as exit price: $${exitPrice.toFixed(2)}`);
-          } catch (error) {
-            logger.error(`❌ Could not fetch market price, using entry price (PnL will be 0): ${error}`);
+          if (this.driftService) {
+            try {
+              exitPrice = await this.driftService.getMarketPrice(marketSymbol);
+              logger.info(`✅ Using market price as exit price: $${exitPrice.toFixed(2)}`);
+            } catch (error) {
+              logger.error(`❌ Could not fetch market price, using entry price (PnL will be 0): ${error}`);
+              exitPrice = entryPrice; // No price change = 0 PnL
+            }
+          } else {
             exitPrice = entryPrice; // No price change = 0 PnL
           }
         }
@@ -1028,7 +1033,7 @@ export class RunService {
       if (this.wsService) {
         this.wsService.broadcastTradeUpdate(runId, {
           runId,
-          trade: updatedTrade,
+          trade: updatedTrade as any, // Prisma enum type compatibility
         });
         logger.info(`📡 Broadcasted trade update for round ${round} via WebSocket`);
       }
