@@ -164,6 +164,28 @@ export class SolanaService {
       const [platformPDA] = this.getPlatformPDA();
       const [runPDA] = this.getRunPDA(runId);
 
+      logger.info(`📝 Creating run on-chain:`);
+      logger.info(`   Run ID: ${runId}`);
+      logger.info(`   Platform PDA: ${platformPDA.toString()}`);
+      logger.info(`   Run PDA: ${runPDA.toString()}`);
+      logger.info(`   Program ID: ${this.programId.toString()}`);
+      logger.info(`   Authority: ${this.wallet.publicKey.toString()}`);
+
+      // Check if platform account exists
+      try {
+        const platformAccount = await this.connection.getAccountInfo(platformPDA);
+        if (!platformAccount) {
+          throw new AppError(
+            `Platform account does not exist at ${platformPDA.toString()}. Please initialize the platform first using scripts/init-platform.js`,
+            400
+          );
+        }
+        logger.info(`   ✅ Platform account exists`);
+      } catch (error) {
+        logger.error(`   ❌ Platform account check failed:`, error);
+        throw error;
+      }
+
       // Convert USDC to smallest unit (6 decimals)
       const minDepositLamports = new BN(minDeposit * 1_000_000);
       const maxDepositLamports = new BN(maxDeposit * 1_000_000);
@@ -206,14 +228,47 @@ export class SolanaService {
       });
 
       const tx = new Transaction().add(instruction);
-      const signature = await this.provider.sendAndConfirm(tx);
+      
+      // Check wallet balance before sending
+      const balance = await this.connection.getBalance(this.wallet.publicKey);
+      logger.info(`   Wallet balance: ${balance / 1e9} SOL`);
+      if (balance < 0.001 * 1e9) {
+        logger.warn(`   ⚠️  Low wallet balance! May not have enough for transaction fees.`);
+      }
+
+      logger.info(`   Sending transaction...`);
+      const signature = await this.provider.sendAndConfirm(tx, [], {
+        commitment: 'confirmed',
+        skipPreflight: false,
+      });
 
       logger.info(`✅ Run created on-chain: Run ID ${runId}, TX: ${signature}`);
       logger.info(`   Run PDA: ${runPDA.toString()}`);
+      logger.info(`   View on Solana Explorer: https://explorer.solana.com/tx/${signature}?cluster=${solanaConfig.network}`);
       return signature;
     } catch (error) {
-      logger.error('Error creating run on-chain:', error);
-      throw new AppError('Failed to create run on-chain', 500);
+      logger.error('❌ Error creating run on-chain:');
+      logger.error('   Error type:', error instanceof Error ? error.constructor.name : typeof error);
+      logger.error('   Error message:', error instanceof Error ? error.message : String(error));
+      if (error instanceof Error && error.stack) {
+        logger.error('   Stack trace:', error.stack);
+      }
+      // Log additional error details if available
+      if (error && typeof error === 'object') {
+        const errorDetails: any = {};
+        Object.getOwnPropertyNames(error).forEach(key => {
+          try {
+            errorDetails[key] = (error as any)[key];
+          } catch {
+            // Skip properties that can't be serialized
+          }
+        });
+        logger.error('   Error details:', JSON.stringify(errorDetails, null, 2));
+      }
+      throw error instanceof AppError ? error : new AppError(
+        `Failed to create run on-chain: ${error instanceof Error ? error.message : String(error)}`,
+        500
+      );
     }
   }
 
