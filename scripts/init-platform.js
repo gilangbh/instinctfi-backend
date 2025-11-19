@@ -29,8 +29,17 @@ async function initializePlatform() {
       throw new Error('SOLANA_PRIVATE_KEY not found in .env');
     }
 
-    const privateKeyData = JSON.parse(privateKeyStr);
-    const keypair = Keypair.fromSecretKey(Uint8Array.from(privateKeyData));
+    // Try parsing as JSON array first, then fall back to base58
+    let keypair;
+    try {
+      const privateKeyData = JSON.parse(privateKeyStr);
+      keypair = Keypair.fromSecretKey(Uint8Array.from(privateKeyData));
+    } catch {
+      // If not JSON, try as base58
+      const bs58 = require('bs58');
+      const privateKeyData = bs58.decode(privateKeyStr);
+      keypair = Keypair.fromSecretKey(privateKeyData);
+    }
     console.log('✓ Authority:', keypair.publicKey.toString());
 
     // Check balance
@@ -42,7 +51,7 @@ async function initializePlatform() {
     }
 
     // 3. Get program ID
-    const programId = new PublicKey(process.env.SOLANA_PROGRAM_ID || '7gmTYKqNX4xKsrd6NfNRscL3XSUoUTQyyTPhySWoABUc');
+    const programId = new PublicKey(process.env.SOLANA_PROGRAM_ID || '83TVAu61Hv4v7zvPszszYFJLTwARG5LPhoTbGnkEmaQD');
     console.log('✓ Program ID:', programId.toString());
 
     // 4. Derive PDAs
@@ -82,9 +91,9 @@ async function initializePlatform() {
     
     const data = Buffer.concat([discriminator, feeBuffer]);
 
-    // Get USDC mint (SPL token mint on devnet)
-    const usdcMint = new PublicKey(process.env.SOLANA_USDC_MINT || '4S3JAFSr7HZg4T8WFPPhXs2HsSz8TyEhEyURVQUxHE5Y');
-    console.log('✓ Using mint:', usdcMint.toString());
+    // Get USDC mint (SPL token mint on devnet/mainnet)
+    const usdcMint = new PublicKey(process.env.SOLANA_USDC_MINT || 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+    console.log('✓ Using USDC mint:', usdcMint.toString());
 
     const instruction = new TransactionInstruction({
       keys: [
@@ -112,11 +121,16 @@ async function initializePlatform() {
     
     await connection.confirmTransaction(signature, 'confirmed');
 
+    const network = process.env.SOLANA_NETWORK || 'devnet';
+    const cluster = network === 'mainnet-beta' ? 'mainnet' : network;
+    
     console.log('\n' + '='.repeat(50));
     console.log('✅ Platform initialized successfully!');
     console.log('='.repeat(50));
     console.log('Platform Fee: 15%');
-    console.log('Transaction:', `https://explorer.solana.com/tx/${signature}?cluster=devnet`);
+    console.log('Platform PDA:', platformPDA.toString());
+    console.log('Platform Fee Vault:', platformFeeVaultPDA.toString());
+    console.log('Transaction:', `https://explorer.solana.com/tx/${signature}?cluster=${cluster}`);
     console.log('\n✅ You can now create runs on the blockchain!');
 
   } catch (error) {
