@@ -147,39 +147,136 @@ export class RunSchedulerService {
   private async startRun(run: any) {
     try {
       logger.info(`🚀 Auto-starting run ${run.id} (${run.participants?.length || 0} participants)`);
+      logger.info(`   ⚠️  On-chain start is REQUIRED - DB status will only be updated after successful on-chain start`);
 
-      // Update run status to ACTIVE
-      await this.prisma.run.update({
-        where: { id: run.id },
-        data: {
-          status: RunStatus.ACTIVE,
-          startedAt: new Date(),
-          startingPool: run.totalPool,
-          countdown: null,
-        },
-      });
-
-      // Create first voting round with chaos modifiers generated
-      await this.runService.createVotingRound(run.id, 1);
-
-      logger.info(`✅ Run ${run.id} started successfully`);
-      logger.info(`   Participants: ${run.participants?.length}`);
-      logger.info(`   Starting pool: ${run.totalPool / 100} USDC`);
-
-      // Start run on-chain via SolanaService
-      const runNumericId = parseInt(run.id) || Date.now();
+      // Start run on-chain FIRST (before updating DB status)
+      const runNumericId = parseInt(run.id) || new Date(run.createdAt).getTime();
+      let onChainStartSucceeded = false;
+      
       if (this.solanaService) {
         try {
+          // Check if run exists on-chain, if not, try to create it
+          const runExists = await this.solanaService.runExistsOnChain(runNumericId);
+          
+          if (!runExists) {
+            logger.warn(`⚠️  Run ${run.id} does not exist on-chain. Creating it now...`);
+            try {
+              // Create run on-chain with parameters from database
+              const minDepositUsdc = run.minDeposit / 100; // Convert from cents to USDC
+              const maxDepositUsdc = run.maxDeposit / 100;
+              const createTx = await this.solanaService.createRun(
+                runNumericId,
+                minDepositUsdc,
+                maxDepositUsdc,
+                run.maxParticipants
+              );
+              logger.info(`✅ Run created on-chain: ${createTx}`);
+              
+              // Also create the vault
+              try {
+                const vaultTx = await this.solanaService.createRunVault(runNumericId);
+                logger.info(`✅ Vault created on-chain: ${vaultTx}`);
+              } catch (vaultError) {
+                logger.error(`⚠️  Failed to create vault on-chain:`, vaultError);
+                // Continue anyway - vault might already exist
+              }
+            } catch (createError) {
+              logger.error(`❌ Failed to create run on-chain:`, createError);
+              throw new Error(`Cannot start run: run does not exist on-chain and creation failed: ${createError instanceof Error ? createError.message : String(createError)}`);
+            }
+          }
+          
+          // Now start the run on-chain
+          logger.info(`📝 Starting run on-chain...`);
           const startTx = await this.solanaService.startRun(runNumericId);
-          logger.info(`✅ Run started on-chain: ${startTx}`);
+          logger.info(`✅ Run started on-chain successfully: ${startTx}`);
+          
+          // Verify the run status changed to Active
+          try {
+            const [runPDA] = this.solanaService.getRunPDA(runNumericId);
+            let startedRun: any = null;
+            
+            if (this.solanaService.program && this.solanaService.program.account && this.solanaService.program.account.run) {
+              startedRun = await this.solanaService.program.account.run.fetch(runPDA);
+            } else {
+              // Fallback to manual decoding
+              const decodedRun = await this.solanaService.decodeRunAccount(runPDA);
+              if (decodedRun) {
+                startedRun = {
+                  status: { toString: () => decodedRun.status },
+                };
+              }
+            }
+            
+            if (startedRun) {
+              const statusStr = typeof startedRun.status === 'string' ? startedRun.status : startedRun.status.toString();
+              logger.info(`   ✅ Verified: On-chain run status is now ${statusStr}`);
+            }
+            onChainStartSucceeded = true;
+          } catch (verifyError) {
+            logger.warn(`   ⚠️  Could not verify on-chain start: ${verifyError instanceof Error ? verifyError.message : String(verifyError)}`);
+            // Even if verification fails, if the transaction succeeded, we consider it successful
+            onChainStartSucceeded = true;
+          }
         } catch (solanaError) {
-          logger.error('⚠️  Failed to start run on-chain (non-blocking):', solanaError);
-          // Continue anyway - the DB state is source of truth
+          logger.error('❌ CRITICAL: Failed to start run on-chain:');
+          logger.error('   Error type:', solanaError instanceof Error ? solanaError.constructor.name : typeof solanaError);
+          logger.error('   Error message:', solanaError instanceof Error ? solanaError.message : String(solanaError));
+          if (solanaError instanceof Error && solanaError.stack) {
+            logger.error('   Stack trace:', solanaError.stack);
+          }
+          logger.error('   ⚠️  On-chain start FAILED - this will prevent DB status update');
+          throw new Error(`Failed to start run on-chain: ${solanaError instanceof Error ? solanaError.message : String(solanaError)}. Run status will remain WAITING until on-chain start succeeds.`);
         }
+      } else {
+        // If Solana service is not available, log a warning but allow DB update
+        logger.warn(`⚠️  SolanaService is not available - skipping on-chain start for run ${run.id}`);
+        logger.warn(`   Run will be marked as ACTIVE in DB, but on-chain status will not be updated`);
+        onChainStartSucceeded = true; // Allow DB update if Solana is not configured
+      }
+
+      // Only update DB status to ACTIVE if on-chain start succeeded
+      if (onChainStartSucceeded) {
+        // Update run status to ACTIVE
+        await this.prisma.run.update({
+          where: { id: run.id },
+          data: {
+            status: RunStatus.ACTIVE,
+            startedAt: new Date(),
+            startingPool: run.totalPool,
+            countdown: null,
+          },
+        });
+
+        // Create first voting round with chaos modifiers generated
+        try {
+          logger.info(`🎲 Creating first voting round for run ${run.id}...`);
+          await this.runService.createVotingRound(run.id, 1);
+          logger.info(`✅ First voting round created successfully`);
+        } catch (roundError) {
+          logger.error(`❌ CRITICAL: Failed to create first voting round:`, roundError);
+          logger.error(`   Error type:`, roundError instanceof Error ? roundError.constructor.name : typeof roundError);
+          logger.error(`   Error message:`, roundError instanceof Error ? roundError.message : String(roundError));
+          // Don't throw - the run is already started, but log the error
+          // The frontend will show "Waiting for Next Round" until a round is created
+        }
+
+        logger.info(`✅ Run ${run.id} started successfully`);
+        logger.info(`   Database status: ACTIVE`);
+        if (this.solanaService) {
+          logger.info(`   On-chain status: Active`);
+        }
+        logger.info(`   Participants: ${run.participants?.length}`);
+        logger.info(`   Starting pool: ${run.totalPool / 100} USDC`);
+      } else {
+        // This should not happen due to error handling above, but just in case
+        throw new Error('On-chain start did not succeed. Run status remains WAITING.');
       }
 
     } catch (error) {
       logger.error(`Error starting run ${run.id}:`, error);
+      // Re-throw to prevent DB update
+      throw error;
     }
   }
 
@@ -225,7 +322,8 @@ export class RunSchedulerService {
 
       if (!currentRound) {
         // No open round - check if we need to end the run
-        const totalRounds = Math.floor((run.duration || config.defaultRunDurationMinutes) / (run.votingInterval || config.defaultVotingIntervalMinutes));
+        // Use totalRounds from database (now set to 3)
+        const totalRounds = run.totalRounds || 3;
         const completedRounds = await this.prisma.votingRound.count({
           where: {
             runId: run.id,
@@ -288,8 +386,8 @@ export class RunSchedulerService {
       await this.runService.executeTrade(run.id, votingRound.round);
       logger.info(`✅ Trade opened for run ${run.id} round ${votingRound.round}`);
 
-      // Check if this was the last round
-      const totalRounds = Math.floor((run.duration || config.defaultRunDurationMinutes) / (run.votingInterval || config.defaultVotingIntervalMinutes));
+      // Check if this was the last round (use totalRounds from database, now set to 3)
+      const totalRounds = run.totalRounds || 3;
       
       if (votingRound.round >= totalRounds) {
         // Last round completed - end the run (will close last position in endRun)

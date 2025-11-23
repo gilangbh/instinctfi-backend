@@ -185,6 +185,39 @@ export class RunController {
   };
 
   /**
+   * Withdraw from a run
+   */
+  withdraw = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { userWalletAddress, walletSignature } = req.body;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        const response: ApiResponse = {
+          success: false,
+          error: 'User not authenticated',
+        };
+        res.status(401).json(response);
+        return;
+      }
+
+      const participant = await this.runService.withdraw(id, userId, userWalletAddress, walletSignature);
+
+      const response: ApiResponse = {
+        success: true,
+        data: participant,
+        message: 'Successfully withdrew from run',
+      };
+
+      res.json(response);
+    } catch (error) {
+      logger.error('Error in withdraw controller:', error);
+      this.handleError(error, res);
+    }
+  };
+
+  /**
    * Start a run
    */
   startRun = async (req: Request, res: Response): Promise<void> => {
@@ -377,6 +410,53 @@ export class RunController {
       };
       res.status(500).json(response);
     }
-  }
+  };
+
+  /**
+   * Mint test USDC to user's wallet (quick fix for devnet)
+   */
+  mintTestUsdc = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { walletAddress } = req.body;
+      const amount = parseFloat(req.body.amount) || 1000;
+
+      if (!walletAddress) {
+        const response: ApiResponse = {
+          success: false,
+          error: 'walletAddress is required',
+        };
+        res.status(400).json(response);
+        return;
+      }
+
+      // Get SolanaService from RunService
+      const solanaService = (this.runService as any).solanaService;
+      if (!solanaService) {
+        const response: ApiResponse = {
+          success: false,
+          error: 'Solana service not available',
+        };
+        res.status(503).json(response);
+        return;
+      }
+
+      const signature = await solanaService.mintTestUsdcToWallet(walletAddress, amount);
+
+      const response: ApiResponse = {
+        success: true,
+        data: {
+          signature,
+          amount,
+          walletAddress,
+        },
+        message: `Successfully minted ${amount} test USDC`,
+      };
+
+      res.status(200).json(response);
+    } catch (error) {
+      logger.error('Error in mintTestUsdc controller:', error);
+      this.handleError(error, res);
+    }
+  };
 }
 

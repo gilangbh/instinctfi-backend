@@ -71,6 +71,7 @@ export class PriceService {
    */
   private async updateSymbolPrice(symbol: string): Promise<void> {
     try {
+      // Get market data from Drift oracle (via DriftService)
       const marketData = await this.driftService.getMarketData(symbol);
       
       const priceData: PriceData = {
@@ -80,7 +81,7 @@ export class PriceService {
         high: marketData.high24h,
         low: marketData.low24h,
         volume: marketData.volume24h,
-        change24h: marketData.change24h,
+        change24h: marketData.change24h, // This now comes from Drift oracle with proper 24h calculation
         timestamp: new Date(),
       };
 
@@ -108,7 +109,10 @@ export class PriceService {
       logger.debug(`Updated ${symbol}: $${marketData.price.toFixed(2)} (${history.length} history points)`);
 
     } catch (error) {
+      // Log error but don't crash - PriceService will retry on next cycle
       logger.error(`Error updating price for ${symbol}:`, error);
+      logger.error(`   This is non-blocking - will retry on next update cycle`);
+      // Don't throw - let the service continue and retry later
     }
   }
 

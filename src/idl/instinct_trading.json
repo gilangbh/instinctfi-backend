@@ -1,5 +1,5 @@
 {
-  "address": "7gmTYKqNX4xKsrd6NfNRscL3XSUoUTQyyTPhySWoABUc",
+  "address": "83TVAu61Hv4v7zvPszszYFJLTwARG5LPhoTbGnkEmaQD",
   "metadata": {
     "name": "instinct_trading",
     "version": "0.1.0",
@@ -562,6 +562,139 @@
       "args": []
     },
     {
+      "name": "record_trade",
+      "docs": [
+        "Record a trade execution (called by backend after each trade on Drift)"
+      ],
+      "discriminator": [
+        83,
+        201,
+        2,
+        171,
+        223,
+        122,
+        186,
+        127
+      ],
+      "accounts": [
+        {
+          "name": "platform",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "run",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  117,
+                  110
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "run_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "trade_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  100,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "run_id"
+              },
+              {
+                "kind": "arg",
+                "path": "round"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "run"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "run_id",
+          "type": "u64"
+        },
+        {
+          "name": "round",
+          "type": "u8"
+        },
+        {
+          "name": "direction",
+          "type": {
+            "defined": {
+              "name": "TradeDirection"
+            }
+          }
+        },
+        {
+          "name": "entry_price",
+          "type": "u64"
+        },
+        {
+          "name": "exit_price",
+          "type": "u64"
+        },
+        {
+          "name": "pnl",
+          "type": "i64"
+        },
+        {
+          "name": "leverage",
+          "type": "u8"
+        },
+        {
+          "name": "position_size_percent",
+          "type": "u8"
+        }
+      ]
+    },
+    {
       "name": "settle_run",
       "docs": [
         "Settle a run with final P/L (called by backend authority after trading ends)"
@@ -955,6 +1088,26 @@
       ],
       "accounts": [
         {
+          "name": "platform",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "run",
           "writable": true,
           "pda": {
@@ -1169,6 +1322,19 @@
       ]
     },
     {
+      "name": "TradeRecord",
+      "discriminator": [
+        150,
+        248,
+        182,
+        169,
+        229,
+        100,
+        24,
+        37
+      ]
+    },
+    {
       "name": "UserParticipation",
       "discriminator": [
         228,
@@ -1245,13 +1411,13 @@
     },
     {
       "code": 6012,
-      "name": "VaultBalanceMismatch",
-      "msg": "Vault balance does not match reported final balance"
+      "name": "RunNotSettled",
+      "msg": "Run is not settled yet"
     },
     {
       "code": 6013,
-      "name": "RunNotSettled",
-      "msg": "Run is not settled yet"
+      "name": "VaultBalanceMismatch",
+      "msg": "Vault balance does not match reported final balance"
     },
     {
       "code": 6014,
@@ -1260,13 +1426,33 @@
     },
     {
       "code": 6015,
+      "name": "AlreadyDeposited",
+      "msg": "User has already deposited to this run"
+    },
+    {
+      "code": 6016,
       "name": "InsufficientVaultFunds",
       "msg": "Insufficient funds in vault"
     },
     {
-      "code": 6016,
+      "code": 6017,
       "name": "ArithmeticOverflow",
       "msg": "Arithmetic overflow occurred"
+    },
+    {
+      "code": 6018,
+      "name": "InvalidRunId",
+      "msg": "Invalid run ID"
+    },
+    {
+      "code": 6019,
+      "name": "InvalidLeverage",
+      "msg": "Invalid leverage (must be between 1.0x and 20.0x)"
+    },
+    {
+      "code": 6020,
+      "name": "InvalidPositionSize",
+      "msg": "Invalid position size (must be between 10% and 100%)"
     }
   ],
   "types": [
@@ -1411,6 +1597,75 @@
           },
           {
             "name": "Settled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TradeDirection",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Long"
+          },
+          {
+            "name": "Short"
+          },
+          {
+            "name": "Skip"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TradeRecord",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "run_id",
+            "type": "u64"
+          },
+          {
+            "name": "round",
+            "type": "u8"
+          },
+          {
+            "name": "direction",
+            "type": {
+              "defined": {
+                "name": "TradeDirection"
+              }
+            }
+          },
+          {
+            "name": "entry_price",
+            "type": "u64"
+          },
+          {
+            "name": "exit_price",
+            "type": "u64"
+          },
+          {
+            "name": "pnl",
+            "type": "i64"
+          },
+          {
+            "name": "leverage",
+            "type": "u8"
+          },
+          {
+            "name": "position_size_percent",
+            "type": "u8"
+          },
+          {
+            "name": "executed_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }

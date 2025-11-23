@@ -252,7 +252,10 @@ export class RealDriftService {
         logger.warn(`   Position may fail or use less than requested amount`);
       }
 
-      // Place market order (official pattern from Drift docs)
+      // PRD: Order type: Always market orders
+      // PRD: Slippage tolerance: Fixed at 0.1% (handled by Drift Protocol)
+      // Note: Drift Protocol handles slippage at the protocol level
+      // The 0.1% slippage tolerance is enforced by Drift's order matching system
       const tx = await this.driftClient!.placePerpOrder({
         orderType: OrderType.MARKET,
         marketIndex,

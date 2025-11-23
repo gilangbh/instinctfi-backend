@@ -51,7 +51,8 @@ export class RunService {
    */
   async createRun(data: CreateRunRequest): Promise<Run> {
     try {
-      const totalRounds = Math.floor((data.duration || config.defaultRunDurationMinutes) / (data.votingInterval || config.defaultVotingIntervalMinutes));
+      // Set to 3 rounds as requested
+      const totalRounds = 3;
 
       // Set lobby phase duration (10 minutes from now)
       // Countdown will be calculated dynamically based on createdAt + 10 minutes
@@ -71,13 +72,19 @@ export class RunService {
         },
       });
 
-      // Extract numeric ID for Solana (assuming auto-increment or convert)
-      // If your ID is a string UUID, you'll need a separate numeric ID field
-      const runNumericId = parseInt(run.id) || Date.now(); // Fallback to timestamp if not numeric
+      // Extract numeric ID for Solana (using timestamp from creation time)
+      // Since CUIDs can't be parsed as numbers, we use the creation timestamp
+      const runNumericId = parseInt(run.id) || new Date(run.createdAt).getTime();
 
       // Only interact with blockchain if Solana service is available
       if (this.solanaService) {
         try {
+          logger.info(`📝 Creating run on-chain for: ${run.id}`);
+          logger.info(`   Numeric Run ID: ${runNumericId}`);
+          logger.info(`   Min Deposit: ${data.minDeposit || config.minDepositUsdc} USDC`);
+          logger.info(`   Max Deposit: ${data.maxDeposit || config.maxDepositUsdc} USDC`);
+          logger.info(`   Max Participants: ${data.maxParticipants || config.maxParticipantsPerRun}`);
+
           // Create run on-chain
           const createTx = await this.solanaService.createRun(
             runNumericId,
@@ -86,17 +93,40 @@ export class RunService {
             data.maxParticipants || config.maxParticipantsPerRun
           );
 
-        // Create vault for the run
-        const vaultTx = await this.solanaService.createRunVault(runNumericId);
+          logger.info(`   ✅ Run created on-chain: ${createTx}`);
 
-        // Log blockchain transaction info (blockchainTxHash field doesn't exist in schema yet)
-        logger.info(`✅ Run created: ${run.id} (${run.tradingPair})`);
-        logger.info(`   Run PDA derived for ID: ${runNumericId}`);
-        logger.info(`   Create TX: ${createTx}`);
-        logger.info(`   Vault TX: ${vaultTx}`);
+          // Create vault for the run (using standard devnet USDC mint)
+          try {
+            const vaultTx = await this.solanaService.createRunVault(runNumericId);
+            logger.info(`   ✅ Vault created on-chain: ${vaultTx}`);
+          } catch (vaultError) {
+            logger.error(`   ❌ Failed to create vault on-chain:`, vaultError);
+            // Don't fail the entire run creation if vault creation fails
+            // The vault can be created later using sync-runs-onchain.js
+            logger.warn(`   ⚠️  Run created but vault creation failed. You can create the vault later using: node scripts/sync-runs-onchain.js ${run.id}`);
+            throw vaultError;
+          }
+          const [vaultPDA] = this.solanaService.getRunVaultPDA(runNumericId);
+          
+          // Log blockchain transaction info
+          logger.info(`✅ Run fully integrated on-chain: ${run.id} (${run.tradingPair})`);
+          logger.info(`   Run PDA: ${this.solanaService.getRunPDA(runNumericId)[0].toString()}`);
+          logger.info(`   Vault PDA: ${vaultPDA.toString()}`);
+          
+          // Log the USDC mint being used
+          const { solanaConfig } = require('@/utils/config');
+          logger.info(`   USDC Mint: ${solanaConfig.usdcMint}`);
+          const standardDevnetUsdc = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU';
+          if (solanaConfig.usdcMint === standardDevnetUsdc) {
+            logger.info(`   ✅ Using standard devnet USDC (recommended)`);
+          } else {
+            logger.warn(`   ⚠️  Using custom USDC mint - users will need tokens from this mint`);
+          }
         } catch (solanaError) {
-          // If blockchain creation fails, we should handle it
+          // If blockchain creation fails, log detailed error but don't fail the request
           logger.error('❌ Failed to create run on-chain, but DB entry created');
+          logger.error('   Run ID:', run.id);
+          logger.error('   Numeric Run ID:', runNumericId);
           logger.error('   Error type:', solanaError instanceof Error ? solanaError.constructor.name : typeof solanaError);
           logger.error('   Error message:', solanaError instanceof Error ? solanaError.message : String(solanaError));
           if (solanaError instanceof Error && solanaError.stack) {
@@ -104,13 +134,21 @@ export class RunService {
           }
           // Log additional error details if available
           if (solanaError && typeof solanaError === 'object') {
-            logger.error('   Error details:', JSON.stringify(solanaError, Object.getOwnPropertyNames(solanaError), 2));
+            const errorDetails: any = {};
+            Object.getOwnPropertyNames(solanaError).forEach(key => {
+              try {
+                errorDetails[key] = (solanaError as any)[key];
+              } catch {
+                // Skip properties that can't be serialized
+              }
+            });
+            logger.error('   Error details:', JSON.stringify(errorDetails, null, 2));
           }
-          // Optionally: Delete the DB entry or mark as failed
-          // For now, we'll let it exist but log the error
+          logger.warn('   ⚠️  You can sync this run later using: node scripts/sync-runs-onchain.js ' + run.id);
         }
       } else {
-        logger.info(`Run created: ${run.id} (${run.tradingPair}) - Blockchain integration disabled`);
+        logger.warn(`⚠️  Run created in database but NOT on-chain (SolanaService not available): ${run.id}`);
+        logger.warn(`   You can sync this run later using: node scripts/sync-runs-onchain.js ${run.id}`);
       }
 
       return run;
@@ -199,8 +237,8 @@ export class RunService {
           },
           orderBy: [
             {
-              endedAt: 'desc',
-            },
+            endedAt: 'desc',
+          },
             {
               createdAt: 'desc', // Fallback if endedAt is null
             },
@@ -281,12 +319,71 @@ export class RunService {
         },
       });
 
-      // Check for walletSignature property (optional field)
+      // Verify on-chain deposit if userWalletAddress and signature are provided
+      const userWalletAddress = data.userWalletAddress;
       const walletSignature = (data as JoinRunRequest & { walletSignature?: string }).walletSignature;
+      
       if (walletSignature) {
         logger.info(
           `Deposit signature recorded for run ${runId} / user ${userId}: ${walletSignature}`
         );
+      }
+      
+      if (userWalletAddress && walletSignature && this.solanaService) {
+        try {
+          const runNumericId = parseInt(run.id) || new Date(run.createdAt).getTime();
+          const { PublicKey } = require('@solana/web3.js');
+          const userPubkey = new PublicKey(userWalletAddress);
+          
+          logger.info(`📝 Verifying on-chain deposit for user ${userId}`);
+          logger.info(`   User wallet: ${userWalletAddress}`);
+          logger.info(`   Transaction signature: ${walletSignature}`);
+          logger.info(`   Run ID: ${runNumericId}`);
+          logger.info(`   Amount: ${data.depositAmount} USDC`);
+
+          // Verify the deposit transaction on-chain
+          const verification = await this.solanaService.verifyDeposit(
+            walletSignature,
+            runNumericId,
+            userPubkey,
+            data.depositAmount
+          );
+
+          if (!verification.verified) {
+            logger.error(`❌ On-chain deposit verification failed: ${verification.error}`);
+            throw new AppError(
+              `On-chain deposit verification failed: ${verification.error || 'Unknown error'}`,
+              400
+            );
+          }
+
+          logger.info(`✅ On-chain deposit verified successfully`);
+          logger.info(`   Participation account: ${verification.participationAccount?.address}`);
+          logger.info(`   Deposit amount: ${verification.participationAccount?.depositAmount} USDC`);
+          
+          // Verify that the run's participant_count was incremented
+          try {
+            const { Program } = require('@coral-xyz/anchor');
+            const idl = require('@/idl/instinct_trading.json');
+            const solanaService = this.solanaService as any;
+            const program = new Program(idl, solanaService.programId, solanaService.provider);
+            const [runPDA] = solanaService.getRunPDA(runNumericId);
+            const decodedRun = await program.account.run.fetch(runPDA);
+            const participantCount = decodedRun.participantCount.toNumber();
+            logger.info(`   📊 Run participant_count on-chain: ${participantCount}`);
+            logger.info(`   ✅ Deposit recorded on-chain - participant_count incremented`);
+          } catch (countError) {
+            logger.warn(`   ⚠️  Could not verify participant_count (non-critical):`, countError);
+          }
+        } catch (solanaError) {
+          logger.error('❌ Failed to verify on-chain deposit:', solanaError);
+          throw new AppError(
+            `Failed to verify on-chain deposit: ${solanaError instanceof Error ? solanaError.message : String(solanaError)}`,
+            400
+          );
+        }
+      } else if (userWalletAddress && !walletSignature) {
+        logger.warn(`⚠️  User wallet address provided but no transaction signature. On-chain deposit may not be verified.`);
       }
 
       // Update run total pool
@@ -358,6 +455,100 @@ export class RunService {
   }
 
   /**
+   * Withdraw user's share after run settlement
+   */
+  async withdraw(runId: string, userId: string, userWalletAddress?: string, walletSignature?: string): Promise<RunParticipant> {
+    try {
+      const run = await this.getRunById(runId);
+      if (!run) {
+        throw new AppError('Run not found', 404);
+      }
+
+      if (run.status !== RunStatus.ENDED) {
+        throw new AppError('Run has not ended yet', 400);
+      }
+
+      const participant = await this.prisma.runParticipant.findUnique({
+        where: {
+          runId_userId: {
+            runId,
+            userId,
+          },
+        },
+      });
+
+      if (!participant) {
+        throw new AppError('User is not a participant in this run', 404);
+      }
+
+      if (participant.withdrawn) {
+        throw new AppError('User has already withdrawn', 400);
+      }
+
+      // Verify on-chain withdraw if userWalletAddress and signature are provided
+      if (userWalletAddress && walletSignature && this.solanaService) {
+        try {
+          const runNumericId = parseInt(run.id) || new Date(run.createdAt).getTime();
+          const { PublicKey } = require('@solana/web3.js');
+          const userPubkey = new PublicKey(userWalletAddress);
+          
+          logger.info(`📝 Verifying on-chain withdraw for user ${userId}`);
+          logger.info(`   User wallet: ${userWalletAddress}`);
+          logger.info(`   Transaction signature: ${walletSignature}`);
+          logger.info(`   Run ID: ${runNumericId}`);
+
+          // Verify the withdraw transaction on-chain
+          const verification = await this.solanaService.verifyWithdraw(
+            walletSignature,
+            runNumericId,
+            userPubkey
+          );
+
+          if (!verification.verified) {
+            logger.error(`❌ On-chain withdraw verification failed: ${verification.error}`);
+            throw new AppError(
+              `On-chain withdraw verification failed: ${verification.error || 'Unknown error'}`,
+              400
+            );
+          }
+
+          logger.info(`✅ On-chain withdraw verified successfully`);
+          logger.info(`   Participation account: ${verification.participationAccount?.address}`);
+          logger.info(`   Final share: ${verification.participationAccount?.finalShare} USDC`);
+
+        } catch (solanaError) {
+          logger.error('❌ Failed to verify on-chain withdraw:', solanaError);
+          throw new AppError(
+            `Failed to verify on-chain withdraw: ${solanaError instanceof Error ? solanaError.message : String(solanaError)}`,
+            400
+          );
+        }
+      } else if (userWalletAddress && !walletSignature) {
+        logger.warn(`⚠️  User wallet address provided but no transaction signature. On-chain withdraw may not be verified.`);
+      }
+
+      // Update participant as withdrawn
+      const updatedParticipant = await this.prisma.runParticipant.update({
+        where: {
+          runId_userId: {
+            runId,
+            userId,
+          },
+        },
+        data: {
+          withdrawn: true,
+        },
+      });
+
+      logger.info(`User ${userId} withdrew from run ${runId}`);
+      return updatedParticipant;
+    } catch (error) {
+      logger.error('Error withdrawing from run:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Start a run
    */
   async startRun(runId: string): Promise<Run> {
@@ -375,32 +566,123 @@ export class RunService {
         throw new AppError('Run has no participants', 400);
       }
 
-      // Start run on-chain (if blockchain is enabled)
+      // Start run on-chain FIRST (before updating DB status)
+      // IMPORTANT: This must succeed before updating DB status to ACTIVE
+      let onChainStartSucceeded = false;
+      
       if (this.solanaService) {
-        const runNumericId = parseInt(run.id) || Date.now();
+        const runNumericId = parseInt(run.id) || new Date(run.createdAt).getTime();
         try {
+          logger.info(`🔗 Starting on-chain start for run ${runId} (numeric ID: ${runNumericId})`);
+          logger.info(`   ⚠️  On-chain start is REQUIRED - DB status will only be updated after successful on-chain start`);
+          
+          // Check if run exists on-chain, if not, try to create it
+          const runExists = await this.solanaService.runExistsOnChain(runNumericId);
+          
+          if (!runExists) {
+            logger.warn(`⚠️  Run ${runId} does not exist on-chain. Creating it now...`);
+            try {
+              // Create run on-chain with parameters from database
+              const minDepositUsdc = run.minDeposit / 100; // Convert from cents to USDC
+              const maxDepositUsdc = run.maxDeposit / 100;
+              const createTx = await this.solanaService.createRun(
+                runNumericId,
+                minDepositUsdc,
+                maxDepositUsdc,
+                run.maxParticipants
+              );
+              logger.info(`✅ Run created on-chain: ${createTx}`);
+              
+              // Also create the vault
+              try {
+                const vaultTx = await this.solanaService.createRunVault(runNumericId);
+                logger.info(`✅ Vault created on-chain: ${vaultTx}`);
+              } catch (vaultError) {
+                logger.error(`⚠️  Failed to create vault on-chain:`, vaultError);
+                // Continue anyway - vault might already exist
+              }
+            } catch (createError) {
+              logger.error(`❌ Failed to create run on-chain:`, createError);
+              throw new Error(`Cannot start run: run does not exist on-chain and creation failed: ${createError instanceof Error ? createError.message : String(createError)}`);
+            }
+          }
+          
+          // Now start the run on-chain
+          logger.info(`📝 Starting run on-chain...`);
           const startTx = await this.solanaService.startRun(runNumericId);
-          logger.info(`Run started on-chain: ${getExplorerUrl(startTx)}`);
+          logger.info(`✅ Run started on-chain successfully: ${getExplorerUrl(startTx)}`);
+          
+          // Verify the run status changed to Active
+          try {
+            const [runPDA] = this.solanaService.getRunPDA(runNumericId);
+            let startedRun: any = null;
+            
+            if (this.solanaService.program && this.solanaService.program.account && this.solanaService.program.account.run) {
+              startedRun = await this.solanaService.program.account.run.fetch(runPDA);
+            } else {
+              // Fallback to manual decoding
+              const decodedRun = await this.solanaService.decodeRunAccount(runPDA);
+              if (decodedRun) {
+                startedRun = {
+                  status: { toString: () => decodedRun.status },
+                };
+              }
+            }
+            
+            if (startedRun) {
+              const statusStr = typeof startedRun.status === 'string' ? startedRun.status : startedRun.status.toString();
+              logger.info(`   ✅ Verified: On-chain run status is now ${statusStr}`);
+            }
+            onChainStartSucceeded = true;
+          } catch (verifyError) {
+            logger.warn(`   ⚠️  Could not verify on-chain start: ${verifyError instanceof Error ? verifyError.message : String(verifyError)}`);
+            // Even if verification fails, if the transaction succeeded, we consider it successful
+            onChainStartSucceeded = true;
+          }
         } catch (solanaError) {
-          logger.error('Failed to start run on-chain:', solanaError);
-          // Continue anyway - the DB state is source of truth
+          logger.error('❌ CRITICAL: Failed to start run on-chain:');
+          logger.error('   Error type:', solanaError instanceof Error ? solanaError.constructor.name : typeof solanaError);
+          logger.error('   Error message:', solanaError instanceof Error ? solanaError.message : String(solanaError));
+          if (solanaError instanceof Error && solanaError.stack) {
+            logger.error('   Stack trace:', solanaError.stack);
+          }
+          logger.error('   ⚠️  On-chain start FAILED - this will prevent DB status update');
+          throw new AppError(
+            `Failed to start run on-chain: ${solanaError instanceof Error ? solanaError.message : String(solanaError)}. Run status will remain WAITING until on-chain start succeeds.`,
+            500
+          );
         }
+      } else {
+        // If Solana service is not available, log a warning but allow DB update
+        logger.warn(`⚠️  SolanaService is not available - skipping on-chain start for run ${runId}`);
+        logger.warn(`   Run will be marked as ACTIVE in DB, but on-chain status will not be updated`);
+        onChainStartSucceeded = true; // Allow DB update if Solana is not configured
       }
 
-      const updatedRun = await this.prisma.run.update({
-        where: { id: runId },
-        data: {
-          status: RunStatus.ACTIVE,
-          startedAt: new Date(),
-          startingPool: run.totalPool,
-        },
-      });
+      // Only update DB status to ACTIVE if on-chain start succeeded
+      if (onChainStartSucceeded) {
+        const updatedRun = await this.prisma.run.update({
+          where: { id: runId },
+          data: {
+            status: RunStatus.ACTIVE,
+            startedAt: new Date(),
+            startingPool: run.totalPool,
+          },
+        });
 
-      // Create first voting round
-      await this.createVotingRound(runId, 1);
+        // Create first voting round
+        await this.createVotingRound(runId, 1);
 
-      logger.info(`Run started: ${runId}`);
-      return updatedRun;
+        logger.info(`✅ Run started successfully: ${runId}`);
+        logger.info(`   Database status: ACTIVE`);
+        if (this.solanaService) {
+          logger.info(`   On-chain status: Active`);
+        }
+        return updatedRun;
+      } else {
+        // This should not happen due to error handling above, but just in case
+        throw new AppError('On-chain start did not succeed. Run status remains WAITING.', 500);
+      }
     } catch (error) {
       logger.error('Error starting run:', error);
       throw error;
@@ -414,26 +696,33 @@ export class RunService {
     try {
       const chaosModifiers = generateChaosModifiers();
       
-      // Get current price from Drift service - required, no fallback
+      // Get current price from Drift service with fallback
       // Get the run to determine trading pair
       const run = await this.getRunById(runId);
       if (!run) {
         throw new AppError('Run not found', 404);
       }
       
+      // Get market symbol from trading pair (e.g., "SOL/USDC" -> "SOL-PERP")
+      const baseSymbol = run.tradingPair?.split('/')[0] || 'SOL';
+      const marketSymbol = baseSymbol + '-PERP';
+      
+      // Get price from Drift oracle only
       if (!this.driftService) {
         throw new AppError('Drift service not available - cannot fetch price', 500);
       }
       
-      // Get market symbol from trading pair (e.g., "SOL/USDC" -> "SOL-PERP")
-      const marketSymbol = run.tradingPair?.split('/')[0] + '-PERP' || 'SOL-PERP';
-      const currentPrice = await this.driftService.getMarketPrice(marketSymbol);
-      
-      if (!currentPrice || currentPrice <= 0) {
-        throw new AppError(`Invalid price fetched for ${marketSymbol}: ${currentPrice}`, 500);
+      let currentPrice: number;
+      try {
+        currentPrice = await this.driftService.getMarketPrice(marketSymbol);
+        if (!currentPrice || currentPrice <= 0) {
+          throw new AppError(`Invalid price fetched from Drift for ${marketSymbol}: ${currentPrice}`, 500);
+        }
+        logger.info(`📊 Fetched price from Drift oracle for ${marketSymbol}: $${currentPrice.toFixed(2)}`);
+      } catch (driftError) {
+        logger.error(`❌ Failed to fetch price from Drift oracle: ${driftError instanceof Error ? driftError.message : String(driftError)}`);
+        throw new AppError(`Cannot fetch price from Drift oracle for ${marketSymbol}: ${driftError instanceof Error ? driftError.message : String(driftError)}`, 500);
       }
-      
-      logger.info(`📊 Fetched real price for ${marketSymbol}: $${currentPrice.toFixed(2)}`);
       
       // Get 24h price change (placeholder for now - can be enhanced later)
       const priceChange24h = 0; // Will be fetched from price service if needed
@@ -454,6 +743,7 @@ export class RunService {
           priceChange24h,
           timeRemaining: 600, // 10 minutes in seconds
           startedAt: new Date(), // Explicitly set startedAt for timer calculation
+          status: RoundStatus.OPEN, // Explicitly set status to OPEN
         },
       });
 
@@ -671,6 +961,13 @@ export class RunService {
       let tradeTransactionId: string | undefined;
       
       if (direction !== 'SKIP') {
+        // PRD Trading Requirements:
+        // - Order type: Always market orders ✓
+        // - Slippage tolerance: Fixed at 0.1% (handled by Drift Protocol)
+        // - Position sizing: Randomized between 10% - 100% of pool ✓
+        // - Leverage: Randomized between 1x - 20x ✓
+        // - Failure handling: If DEX trade fails → Skip trade and continue
+        
         // Calculate position size in USDC
         const positionSizeUsdc = (run.totalPool / 100) * chaosModifiers.positionSizePercentage / 100;
         
@@ -682,6 +979,7 @@ export class RunService {
             
             logger.info(`🚀 Opening position on Drift: ${direction} ${positionSizeUsdc / 100} USDC at ${chaosModifiers.leverage}x leverage`);
             logger.info(`   Position will stay open until next round's voting ends (${run.votingInterval} minutes)`);
+            logger.info(`   Slippage tolerance: 0.1% (fixed per PRD)`);
             logger.info(`   DriftService available: ${!!this.driftService}`);
             logger.info(`   Is real trading enabled: ${this.driftService.isRealTrading()}`);
             
@@ -718,18 +1016,21 @@ export class RunService {
               logger.info(`   Entry: $${entryPrice.toFixed(2)}`);
               logger.info(`   Position will close when round ${round + 1} voting ends`);
             } else {
+              // PRD: "If DEX trade fails → Skip trade and continue"
               logger.error(`❌ Trade execution failed: ${tradeResult.error}`);
-              // Fallback to simulation if real trade fails
-              // For simulation, we'll still keep it "open" conceptually
-              logger.warn('⚠️ Falling back to simulated trade');
+              logger.warn('⚠️ DEX trade failed - treating as SKIP per PRD');
+              direction = 'SKIP'; // Change direction to SKIP when DEX fails
             }
           } catch (error) {
-            logger.error('Error executing trade on Drift, falling back to simulation:', error);
-            // Fallback to simulation - position stays "open" conceptually
+            // PRD: "If DEX trade fails → Skip trade and continue"
+            logger.error('Error executing trade on Drift:', error);
+            logger.warn('⚠️ DEX trade error - treating as SKIP per PRD');
+            direction = 'SKIP'; // Change direction to SKIP when DEX fails
           }
         } else {
-          // No Drift service - simulate trade (but keep it "open" conceptually)
-          logger.warn('⚠️ Drift service not available - simulating trade');
+          // No Drift service - treat as SKIP per PRD failure handling
+          logger.warn('⚠️ Drift service not available - treating as SKIP per PRD');
+          direction = 'SKIP';
         }
       }
 
@@ -760,7 +1061,15 @@ export class RunService {
       const runNumericId = parseInt(runId) || Date.now();
       if (this.solanaService && runNumericId) {
         try {
-          await this.solanaService.recordTrade({
+          logger.info(`📝 Attempting to record trade on-chain:`);
+          logger.info(`   Run ID: ${runNumericId} (from DB ID: ${runId})`);
+          logger.info(`   Round: ${round}`);
+          logger.info(`   Direction: ${direction}`);
+          logger.info(`   Entry Price: $${entryPrice.toFixed(2)}`);
+          logger.info(`   Leverage: ${chaosModifiers.leverage.toFixed(1)}x`);
+          logger.info(`   Position Size: ${chaosModifiers.positionSizePercentage.toFixed(1)}%`);
+          
+          const txSignature = await this.solanaService.recordTrade({
             runId: runNumericId,
             round,
             direction: direction as 'LONG' | 'SHORT' | 'SKIP',
@@ -770,10 +1079,25 @@ export class RunService {
             leverage: chaosModifiers.leverage,
             positionSizePercent: chaosModifiers.positionSizePercentage,
           });
+          
           logger.info(`✅ Trade recorded on-chain for round ${round}`);
+          logger.info(`   Transaction: ${txSignature}`);
         } catch (error) {
-          logger.error(`⚠️  Failed to record trade on-chain (non-blocking):`, error);
+          logger.error(`⚠️  Failed to record trade on-chain (non-blocking):`);
+          logger.error(`   Run ID: ${runNumericId} (from DB ID: ${runId})`);
+          logger.error(`   Round: ${round}`);
+          logger.error(`   Error:`, error instanceof Error ? error.message : String(error));
+          if (error instanceof Error && error.stack) {
+            logger.error(`   Stack:`, error.stack);
+          }
           // Continue - don't fail the trade execution
+        }
+      } else {
+        if (!this.solanaService) {
+          logger.warn(`⚠️  SolanaService not available - trade not recorded on-chain`);
+        }
+        if (!runNumericId) {
+          logger.warn(`⚠️  Could not determine numeric run ID - trade not recorded on-chain`);
         }
       }
 
@@ -1014,7 +1338,7 @@ export class RunService {
           totalPool: newTotalPool,
         },
       });
-      
+
       // Log warning if pool would have gone negative
       if (run.totalPool + pnl < 0) {
         logger.warn(`⚠️ Pool would have gone negative for run ${runId}. Clamped to 0. Original: ${run.totalPool}, PnL: ${pnl}, New: ${newTotalPool}`);
@@ -1033,7 +1357,7 @@ export class RunService {
           logger.info(`📝 Trade closed - on-chain record exists for round ${round}`);
           logger.info(`   Final Entry: $${entryPrice.toFixed(2)}, Exit: $${exitPrice.toFixed(2)}, PnL: $${(pnl / 100).toFixed(2)}`);
           // TODO: Add update_trade instruction to Solana program to update exit price and PnL
-        } catch (error) {
+    } catch (error) {
           logger.error(`⚠️  Failed to update trade on-chain (non-blocking):`, error);
           // Continue - don't fail the trade closing
         }
@@ -1107,43 +1431,262 @@ export class RunService {
             finalShare,
           },
         });
-
-        // Prepare participant shares for on-chain settlement
-        // NOTE: You need to have wallet addresses stored in your User model
-        if (participant.user?.walletAddress) {
-          participantShares.push({
-            userPubkey: participant.user.walletAddress,
-            shareAmount: finalShare / 100, // Convert from cents to USDC
-          });
-        }
       }
 
       // Settle run on-chain (if blockchain is enabled)
+      // IMPORTANT: This must succeed before updating DB status to ENDED
+      let onChainSettlementSucceeded = false;
       if (this.solanaService) {
-        const runNumericId = parseInt(runId) || Date.now();
+        // Use the same numeric ID generation logic as createRun
+        // This ensures we use the same ID that was used when creating the run on-chain
+        const runNumericId = parseInt(runId) || new Date(run.createdAt).getTime();
         try {
+          logger.info(`🔗 Starting on-chain settlement for run ${runId} (numeric ID: ${runNumericId})`);
+          logger.info(`   ⚠️  On-chain settlement is REQUIRED - DB status will only be updated after successful settlement`);
+          
+          // Check if run exists on-chain and get its status
+          const runExists = await this.solanaService.runExistsOnChain(runNumericId);
+          if (!runExists) {
+            logger.warn(`   ⚠️  Run ${runNumericId} does not exist on-chain. Attempting to create it now...`);
+            
+            // Try to create the run on-chain if it doesn't exist
+            try {
+              const minDepositUsdc = run.minDeposit / 100; // Convert from cents to USDC
+              const maxDepositUsdc = run.maxDeposit / 100;
+              
+              logger.info(`   Creating run on-chain with ID ${runNumericId}...`);
+              const createTx = await this.solanaService.createRun(
+                runNumericId,
+                minDepositUsdc,
+                maxDepositUsdc,
+                run.maxParticipants
+              );
+              logger.info(`   ✅ Run created on-chain: ${createTx}`);
+              
+              // Also create the vault if it doesn't exist
+              try {
+                const vaultTx = await this.solanaService.createRunVault(runNumericId);
+                logger.info(`   ✅ Vault created on-chain: ${vaultTx}`);
+              } catch (vaultError) {
+                logger.warn(`   ⚠️  Vault creation failed (may already exist):`, vaultError);
+                // Continue - vault might already exist
+              }
+              
+              // Now start the run on-chain if it's in ACTIVE status
+              if (run.status === RunStatus.ACTIVE) {
+                try {
+                  const startTx = await this.solanaService.startRun(runNumericId);
+                  logger.info(`   ✅ Run started on-chain: ${startTx}`);
+                } catch (startError) {
+                  logger.warn(`   ⚠️  Run start failed (may already be started):`, startError);
+                  // Continue - run might already be started
+                }
+              }
+              
+              logger.info(`   ✅ Run ${runNumericId} successfully created and synced on-chain`);
+            } catch (createError) {
+              const errorMsg = `Run ${runNumericId} does not exist on-chain and creation failed: ${createError instanceof Error ? createError.message : String(createError)}`;
+              logger.error(`   ❌ ${errorMsg}`);
+              throw new Error(errorMsg);
+            }
+          }
+          
+          // Fetch on-chain run data to verify status and requirements
+          let onChainRun: any = null;
+          try {
+            const [runPDA] = this.solanaService.getRunPDA(runNumericId);
+            
+            // Try using Anchor program first, fallback to manual decoding if program is null
+            if (this.solanaService.program && this.solanaService.program.account && this.solanaService.program.account.run) {
+              onChainRun = await this.solanaService.program.account.run.fetch(runPDA);
+              logger.info(`   On-chain run status: ${onChainRun.status.toString()}`);
+              logger.info(`   On-chain participant count: ${onChainRun.participantCount.toNumber()}`);
+              logger.info(`   Database participant count: ${participants.length}`);
+              logger.info(`   On-chain total deposited: ${onChainRun.totalDeposited.toNumber() / 1_000_000} USDC`);
+            } else {
+              // Fallback to manual decoding
+              logger.info(`   ⚠️  Anchor program not available, using manual account decoding`);
+              const decodedRun = await this.solanaService.decodeRunAccount(runPDA);
+              if (!decodedRun) {
+                throw new Error(`Run account not found on-chain at ${runPDA.toString()}`);
+              }
+              // Convert to format similar to Anchor program output
+              onChainRun = {
+                status: { toString: () => decodedRun.status },
+                participantCount: { toNumber: () => decodedRun.participantCount },
+                totalDeposited: { toNumber: () => decodedRun.totalDeposited.toNumber() },
+              };
+              logger.info(`   On-chain run status: ${decodedRun.status}`);
+              logger.info(`   On-chain participant count: ${decodedRun.participantCount}`);
+              logger.info(`   Database participant count: ${participants.length}`);
+              logger.info(`   On-chain total deposited: ${decodedRun.totalDeposited.toNumber() / 1_000_000} USDC`);
+            }
+            
+            // Verify run is in Active status (required by settle_run)
+            const statusStr = typeof onChainRun.status === 'string' ? onChainRun.status : onChainRun.status.toString();
+            if (statusStr !== 'Active') {
+              const errorMsg = `On-chain run status is ${statusStr}, but settle_run requires Active status.`;
+              logger.error(`   ❌ ${errorMsg}`);
+              throw new Error(errorMsg);
+            }
+            
+            // Verify participant count matches
+            const onChainParticipantCount = typeof onChainRun.participantCount === 'number' 
+              ? onChainRun.participantCount 
+              : onChainRun.participantCount.toNumber();
+            if (onChainParticipantCount !== participants.length) {
+              const errorMsg = `Participant count mismatch: On-chain ${onChainParticipantCount}, Database ${participants.length}. settle_run requires exact match.`;
+              logger.error(`   ❌ ${errorMsg}`);
+              throw new Error(errorMsg);
+            }
+            
+            logger.info(`   ✅ Run status and participant count verified`);
+          } catch (fetchError) {
+            logger.error(`   ❌ Could not verify on-chain run data: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`);
+            throw fetchError; // Don't proceed if we can't verify
+          }
+          
+          // Get actual vault balance from on-chain
+          const [runVaultPDA] = this.solanaService.getRunVaultPDA(runNumericId);
+          const { getAccount } = require('@solana/spl-token');
+          const vaultAccount = await getAccount(this.solanaService['connection'], runVaultPDA);
+          const vaultBalanceUsdc = Number(vaultAccount.amount) / 1_000_000; // Convert from micro-USDC to USDC
+          
+          logger.info(`📊 On-chain vault balance: ${vaultBalanceUsdc} USDC`);
+          logger.info(`📊 Database total pool: ${run.totalPool / 100} USDC`);
+          
+          // Fetch wallet addresses from database for all participants
+          logger.info(`📝 Fetching participant wallet addresses...`);
+          for (let i = 0; i < participants.length; i++) {
+            const participant = participants[i];
+            const finalShare = calculateFinalShare(participant.depositAmount, pnlShares[i]);
+            
+            try {
+              // Get wallet address from database (should always exist since it's required)
+              const user = await this.prisma.user.findUnique({
+                where: { id: participant.userId },
+                select: { walletAddress: true },
+              });
+
+              if (user?.walletAddress) {
+                participantShares.push({
+                  userPubkey: user.walletAddress,
+                  shareAmount: finalShare / 100, // Convert from cents to USDC
+                });
+                logger.info(`   ✅ Participant ${i + 1}/${participants.length}: ${user.walletAddress.substring(0, 8)}... (${finalShare / 100} USDC)`);
+              } else {
+                logger.error(`   ❌ Participant ${i + 1} (${participant.userId}) has no wallet address in DB. This should not happen!`);
+                throw new Error(`Participant ${participant.userId} has no wallet address. Cannot settle run on-chain.`);
+              }
+            } catch (error) {
+              logger.error(`   ❌ Error fetching wallet address for participant ${i + 1}:`, error);
+              throw error; // Re-throw to fail the settlement if we can't get all addresses
+            }
+          }
+
+          if (participantShares.length === 0) {
+            throw new Error('No participant shares found. Cannot settle run on-chain.');
+          }
+
+          if (participantShares.length !== participants.length) {
+            throw new Error(`Mismatch: Only ${participantShares.length} out of ${participants.length} participants have wallet addresses. Cannot settle run on-chain.`);
+          }
+
+          logger.info(`   ✅ All ${participantShares.length} participants have wallet addresses. Proceeding with on-chain settlement.`);
+          const totalShares = participantShares.reduce((sum, p) => sum + p.shareAmount, 0);
+          logger.info(`   Total shares to distribute: ${totalShares.toFixed(2)} USDC`);
+          logger.info(`   Vault balance: ${vaultBalanceUsdc.toFixed(2)} USDC`);
+          
+          // Verify vault balance matches what we're reporting (required by settle_run)
+          // Allow small rounding differences (1 micro-USDC = 0.000001 USDC)
+          const balanceDiff = Math.abs(vaultBalanceUsdc - totalShares);
+          if (balanceDiff > 0.000001) {
+            logger.warn(`   ⚠️  Vault balance (${vaultBalanceUsdc.toFixed(6)}) differs from total shares (${totalShares.toFixed(6)}) by ${balanceDiff.toFixed(6)} USDC`);
+            logger.warn(`   ⚠️  This might cause settle_run to fail. Using vault balance as final_balance.`);
+          }
+
+          logger.info(`📝 Settling run on-chain with ${participantShares.length} participant shares...`);
+          logger.info(`   Final balance (vault): ${vaultBalanceUsdc.toFixed(6)} USDC`);
+          
+          // Use the actual on-chain vault balance (required by Solana program)
+          // The settle_run instruction verifies that vault_balance == final_balance
           const settleTx = await this.solanaService.settleRun(
             runNumericId,
-            run.totalPool / 100, // Convert from cents to USDC
+            vaultBalanceUsdc, // Use actual on-chain vault balance (must match exactly)
             participantShares
           );
-          logger.info(`Run settled on-chain: ${getExplorerUrl(settleTx)}`);
+          logger.info(`✅ Run settled on-chain successfully!`);
+          logger.info(`   Transaction: ${getExplorerUrl(settleTx)}`);
+          
+          // Mark settlement as succeeded since the transaction completed
+          onChainSettlementSucceeded = true;
+          
+          // Verify the run status changed to Settled (optional verification)
+          try {
+            const [runPDA] = this.solanaService.getRunPDA(runNumericId);
+            let settledRun: any = null;
+            
+            if (this.solanaService.program && this.solanaService.program.account && this.solanaService.program.account.run) {
+              settledRun = await this.solanaService.program.account.run.fetch(runPDA);
+            } else {
+              // Fallback to manual decoding
+              const decodedRun = await this.solanaService.decodeRunAccount(runPDA);
+              if (decodedRun) {
+                settledRun = {
+                  status: { toString: () => decodedRun.status },
+                };
+              }
+            }
+            
+            if (settledRun) {
+              const statusStr = typeof settledRun.status === 'string' ? settledRun.status : settledRun.status.toString();
+              logger.info(`   ✅ Verified: On-chain run status is now ${statusStr}`);
+            }
+          } catch (verifyError) {
+            logger.warn(`   ⚠️  Could not verify settlement: ${verifyError instanceof Error ? verifyError.message : String(verifyError)}`);
+            // Settlement already succeeded, verification is just a double-check
+          }
         } catch (solanaError) {
-          logger.error('Failed to settle run on-chain:', solanaError);
-          // Continue anyway - participants can still withdraw based on DB state
+          logger.error('❌ CRITICAL: Failed to settle run on-chain:');
+          logger.error('   Error type:', solanaError instanceof Error ? solanaError.constructor.name : typeof solanaError);
+          logger.error('   Error message:', solanaError instanceof Error ? solanaError.message : String(solanaError));
+          if (solanaError instanceof Error && solanaError.stack) {
+            logger.error('   Stack trace:', solanaError.stack);
+          }
+          logger.error('   ⚠️  On-chain settlement FAILED - this will prevent DB status update');
+          // Re-throw the error to prevent DB status update
+          throw new AppError(
+            `Failed to settle run on-chain: ${solanaError instanceof Error ? solanaError.message : String(solanaError)}. Run status will remain ACTIVE until settlement succeeds.`,
+            500
+          );
         }
+      } else {
+        // If Solana service is not available, log a warning but allow DB update
+        logger.warn(`⚠️  SolanaService is not available - skipping on-chain settlement for run ${runId}`);
+        logger.warn(`   Run will be marked as ENDED in DB, but on-chain status will not be updated`);
+        onChainSettlementSucceeded = true; // Allow DB update if Solana is not configured
       }
 
-      const updatedRun = await this.prisma.run.update({
-        where: { id: runId },
-        data: {
-          status: RunStatus.ENDED,
-          endedAt: new Date(),
-        },
-      });
+      // Only update DB status to ENDED if on-chain settlement succeeded (or Solana is not configured)
+      if (onChainSettlementSucceeded) {
+        const updatedRun = await this.prisma.run.update({
+          where: { id: runId },
+          data: {
+            status: RunStatus.ENDED,
+            endedAt: new Date(),
+          },
+        });
 
-      logger.info(`Run ended: ${runId}`);
-      return updatedRun;
+        logger.info(`✅ Run ended successfully: ${runId}`);
+        logger.info(`   Database status: ENDED`);
+        if (this.solanaService) {
+          logger.info(`   On-chain status: Settled`);
+        }
+        return updatedRun;
+      } else {
+        // This should not happen due to the error handling above, but just in case
+        throw new AppError('On-chain settlement did not succeed. Run status remains ACTIVE.', 500);
+      }
     } catch (error) {
       logger.error('Error ending run:', error);
       throw error;

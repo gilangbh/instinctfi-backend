@@ -72,6 +72,11 @@ export const createRunRoutes = (runController: RunController, authMiddleware: Au
   );
 
   router.post(
+    '/:id/withdraw',
+    runController.withdraw
+  );
+
+  router.post(
     '/:id/vote',
     validate(castVoteSchema),
     voteRateLimit,

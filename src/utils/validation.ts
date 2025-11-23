@@ -28,6 +28,7 @@ export const createRunSchema = Joi.object({
 export const joinRunSchema = Joi.object({
   depositAmount: Joi.number().integer().min(10).max(100).required(), // 10-100 USDC
   walletSignature: Joi.string().min(16).max(200).optional(),
+  userWalletAddress: Joi.string().pattern(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/).optional(), // User's Solana wallet address for on-chain deposit verification
 });
 
 // Vote validation schemas

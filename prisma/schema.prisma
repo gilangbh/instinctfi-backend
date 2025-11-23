@@ -11,19 +11,19 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  walletAddress String    @unique
-  username      String    @unique
-  email         String?   @unique
-  xp            Int       @default(0)
-  totalRuns     Int       @default(0)
-  winRate       Float     @default(0)
-  reputation    Int       @default(0)
-  isBanned      Boolean   @default(false)
+  id            String   @id @default(cuid())
+  walletAddress String   @unique
+  username      String   @unique
+  email         String?  @unique
+  xp            Int      @default(0)
+  totalRuns     Int      @default(0)
+  winRate       Float    @default(0)
+  reputation    Int      @default(0)
+  isBanned      Boolean  @default(false)
   banReason     String?
   banExpiresAt  DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   // Relations
   badges        UserBadge[]
@@ -51,10 +51,10 @@ model Badge {
 }
 
 model UserBadge {
-  id       String   @id @default(cuid())
-  userId   String
-  badgeId  String
-  earnedAt DateTime @default(now())
+  id        String   @id @default(cuid())
+  userId    String
+  badgeId   String
+  earnedAt  DateTime @default(now())
 
   // Relations
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -65,25 +65,25 @@ model UserBadge {
 }
 
 model Run {
-  id              String    @id @default(cuid())
-  status          RunStatus @default(WAITING)
-  tradingPair     String
-  coin            String
-  duration        Int // in minutes
-  votingInterval  Int // in minutes
-  lobbyDuration   Int       @default(10) // in minutes (lobby phase duration)
-  minDeposit      Int // in cents (USDC)
-  maxDeposit      Int // in cents (USDC)
-  maxParticipants Int       @default(100)
-  totalPool       Int       @default(0) // in cents
-  startingPool    Int       @default(0) // in cents
-  currentRound    Int       @default(0)
-  totalRounds     Int
-  countdown       Int? // seconds until next action
-  startedAt       DateTime?
-  endedAt         DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                String      @id @default(cuid())
+  status            RunStatus   @default(WAITING)
+  tradingPair       String
+  coin              String
+  duration          Int         // in minutes
+  votingInterval    Int         // in minutes
+  lobbyDuration     Int         @default(10) // in minutes (lobby phase duration)
+  minDeposit        Int         // in cents (USDC)
+  maxDeposit        Int         // in cents (USDC)
+  maxParticipants   Int         @default(100)
+  totalPool         Int         @default(0) // in cents
+  startingPool      Int         @default(0) // in cents
+  currentRound      Int         @default(0)
+  totalRounds       Int
+  countdown         Int?        // seconds until next action
+  startedAt         DateTime?
+  endedAt           DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
 
   // Relations
   participants RunParticipant[]
@@ -95,15 +95,15 @@ model Run {
 }
 
 model RunParticipant {
-  id            String    @id @default(cuid())
+  id            String   @id @default(cuid())
   runId         String
   userId        String
-  depositAmount Int // in cents
-  withdrawn     Boolean   @default(false)
-  finalShare    Int? // in cents
-  votesCorrect  Int       @default(0)
-  totalVotes    Int       @default(0)
-  joinedAt      DateTime  @default(now())
+  depositAmount Int      // in cents
+  withdrawn     Boolean  @default(false)
+  finalShare    Int?     // in cents
+  votesCorrect  Int      @default(0)
+  totalVotes    Int      @default(0)
+  joinedAt      DateTime @default(now())
   withdrawnAt   DateTime?
 
   // Relations
@@ -115,17 +115,17 @@ model RunParticipant {
 }
 
 model Trade {
-  id            String         @id @default(cuid())
+  id            String      @id @default(cuid())
   runId         String
   round         Int
   direction     TradeDirection
   leverage      Int
-  positionSize  Int // percentage of pool
-  entryPrice    Decimal        @db.Decimal(20, 8)
-  exitPrice     Decimal?       @db.Decimal(20, 8)
-  pnl           Int // in cents
-  pnlPercentage Decimal        @db.Decimal(10, 4)
-  executedAt    DateTime       @default(now())
+  positionSize  Int         // percentage of pool
+  entryPrice    Decimal     @db.Decimal(20, 8)
+  exitPrice     Decimal?    @db.Decimal(20, 8)
+  pnl           Int         // in cents
+  pnlPercentage Decimal     @db.Decimal(10, 4)
+  executedAt    DateTime    @default(now())
   settledAt     DateTime?
 
   // Relations
@@ -135,12 +135,12 @@ model Trade {
 }
 
 model Vote {
-  id      String     @id @default(cuid())
-  runId   String
-  userId  String
-  round   Int
-  choice  VoteChoice
-  votedAt DateTime   @default(now())
+  id        String      @id @default(cuid())
+  runId     String
+  userId    String
+  round     Int
+  choice    VoteChoice
+  votedAt   DateTime    @default(now())
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -150,19 +150,19 @@ model Vote {
 }
 
 model VotingRound {
-  id               String      @id @default(cuid())
-  runId            String
-  round            Int
-  status           RoundStatus @default(OPEN)
-  timeRemaining    Int // seconds
-  leverage         Int
-  positionSize     Int // percentage
-  currentPrice     Decimal     @db.Decimal(20, 8)
-  priceChange24h   Decimal     @db.Decimal(10, 4)
-  voteDistribution Json? // {long: number, short: number, skip: number}
-  startedAt        DateTime    @default(now())
-  closedAt         DateTime?
-  executedAt       DateTime?
+  id              String        @id @default(cuid())
+  runId           String
+  round           Int
+  status          RoundStatus   @default(OPEN)
+  timeRemaining   Int           // seconds
+  leverage        Int
+  positionSize    Int           // percentage
+  currentPrice    Decimal       @db.Decimal(20, 8)
+  priceChange24h  Decimal       @db.Decimal(10, 4)
+  voteDistribution Json?        // {long: number, short: number, skip: number}
+  startedAt       DateTime      @default(now())
+  closedAt        DateTime?
+  executedAt      DateTime?
 
   // Relations
   run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
@@ -254,3 +254,4 @@ enum RoundStatus {
   EXECUTING
   SETTLED
 }
+

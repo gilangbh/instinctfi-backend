@@ -47,13 +47,16 @@ export const strictRateLimit = rateLimit({
 
 /**
  * Vote rate limiter - one vote per round per user
+ * Key includes round number so each round has its own rate limit window
  */
 export const voteRateLimit = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes (voting window)
-  max: 1, // 1 vote per 10 minutes
+  max: 1, // 1 vote per round per 10 minutes
   keyGenerator: (req: Request) => {
-    // Use user ID if authenticated, otherwise IP
-    return req.user?.id || req.ip || 'anonymous';
+    // Include round number in the key so each round has its own rate limit window
+    const round = req.body?.round || req.query?.round || 'unknown';
+    const userId = req.user?.id || req.ip || 'anonymous';
+    return `${userId}:${req.params?.id || 'unknown'}:${round}`;
   },
   message: {
     success: false,
@@ -62,7 +65,8 @@ export const voteRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req: Request, res: Response) => {
-    logger.warn(`Vote rate limit exceeded for user: ${req.user?.id || req.ip}`);
+    const round = req.body?.round || req.query?.round || 'unknown';
+    logger.warn(`Vote rate limit exceeded for user: ${req.user?.id || req.ip}, round: ${round}`);
     res.status(429).json({
       success: false,
       error: 'You can only vote once per round',

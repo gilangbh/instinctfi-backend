@@ -59,7 +59,7 @@ export const solanaConfig = {
   network: process.env.SOLANA_NETWORK || 'devnet',
   privateKey: process.env.SOLANA_PRIVATE_KEY || '',
   programId: process.env.SOLANA_PROGRAM_ID || '7gmTYKqNX4xKsrd6NfNRscL3XSUoUTQyyTPhySWoABUc',
-  usdcMint: process.env.SOLANA_USDC_MINT || 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // Devnet USDC
+  usdcMint: process.env.SOLANA_USDC_MINT || '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU', // Devnet USDC (valid token mint)
 };
 
 export const redisConfig = {

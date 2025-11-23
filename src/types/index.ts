@@ -140,6 +140,7 @@ export interface CreateRunRequest {
 export interface JoinRunRequest {
   depositAmount: number;
   walletSignature?: string;
+  userWalletAddress?: string; // Solana wallet address for on-chain deposit
 }
 
 // Run Participant Types

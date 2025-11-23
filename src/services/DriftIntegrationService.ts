@@ -102,6 +102,7 @@ export class DriftIntegrationService {
         return mockResult;
       }
     } catch (error) {
+      // PRD: "If DEX trade fails → Skip trade and continue"
       logger.error('Trade execution failed:', error);
       return {
         success: false,

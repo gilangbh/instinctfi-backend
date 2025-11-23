@@ -244,7 +244,7 @@ async function main() {
           minDeposit: 1000, // 10 USDC in cents
           maxDeposit: 10000, // 100 USDC in cents
           maxParticipants: 100,
-          totalRounds: 12,
+          totalRounds: 3,
         },
       }),
       prisma.run.create({
@@ -257,8 +257,8 @@ async function main() {
           minDeposit: 1000,
           maxDeposit: 10000,
           maxParticipants: 100,
-          totalRounds: 12,
-          currentRound: 3,
+          totalRounds: 3,
+          currentRound: 2,
           startedAt: new Date(Date.now() - 30 * 60 * 1000), // 30 minutes ago
         },
       }),
@@ -272,8 +272,8 @@ async function main() {
           minDeposit: 1000,
           maxDeposit: 10000,
           maxParticipants: 100,
-          totalRounds: 12,
-          currentRound: 12,
+          totalRounds: 3,
+          currentRound: 3,
           startedAt: new Date(Date.now() - 3 * 60 * 60 * 1000), // 3 hours ago
           endedAt: new Date(Date.now() - 1 * 60 * 60 * 1000), // 1 hour ago
         },
