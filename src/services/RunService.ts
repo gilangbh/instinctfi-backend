@@ -617,8 +617,9 @@ export class RunService {
             const [runPDA] = this.solanaService.getRunPDA(runNumericId);
             let startedRun: any = null;
             
-            if (this.solanaService.program && this.solanaService.program.account && this.solanaService.program.account.run) {
-              startedRun = await this.solanaService.program.account.run.fetch(runPDA);
+            const program = this.solanaService.getProgram();
+            if (program && program.account && program.account.run) {
+              startedRun = await program.account.run.fetch(runPDA);
             } else {
               // Fallback to manual decoding
               const decodedRun = await this.solanaService.decodeRunAccount(runPDA);
@@ -1497,8 +1498,9 @@ export class RunService {
             const [runPDA] = this.solanaService.getRunPDA(runNumericId);
             
             // Try using Anchor program first, fallback to manual decoding if program is null
-            if (this.solanaService.program && this.solanaService.program.account && this.solanaService.program.account.run) {
-              onChainRun = await this.solanaService.program.account.run.fetch(runPDA);
+            const program = this.solanaService.getProgram();
+            if (program && program.account && program.account.run) {
+              onChainRun = await program.account.run.fetch(runPDA);
               logger.info(`   On-chain run status: ${onChainRun.status.toString()}`);
               logger.info(`   On-chain participant count: ${onChainRun.participantCount.toNumber()}`);
               logger.info(`   Database participant count: ${participants.length}`);
@@ -1626,8 +1628,9 @@ export class RunService {
             const [runPDA] = this.solanaService.getRunPDA(runNumericId);
             let settledRun: any = null;
             
-            if (this.solanaService.program && this.solanaService.program.account && this.solanaService.program.account.run) {
-              settledRun = await this.solanaService.program.account.run.fetch(runPDA);
+            const program = this.solanaService.getProgram();
+            if (program && program.account && program.account.run) {
+              settledRun = await program.account.run.fetch(runPDA);
             } else {
               // Fallback to manual decoding
               const decodedRun = await this.solanaService.decodeRunAccount(runPDA);

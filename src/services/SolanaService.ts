@@ -54,6 +54,13 @@ export class SolanaService {
   private usdcMint: PublicKey;
   private program: any; // Anchor Program instance
 
+  /**
+   * Get the Anchor program instance (public getter)
+   */
+  public getProgram(): any {
+    return this.program;
+  }
+
   constructor() {
     this.connection = new Connection(solanaConfig.rpcUrl, 'confirmed');
     
@@ -1348,6 +1355,7 @@ export class SolanaService {
       const data = Buffer.concat([discriminator, runIdBuf, amountBuf]);
 
       // Get user's USDC token account (associated token account)
+      const { getAssociatedTokenAddressSync } = require('@solana/spl-token');
       const userTokenAccount = getAssociatedTokenAddressSync(
         this.usdcMint,
         userPubkey

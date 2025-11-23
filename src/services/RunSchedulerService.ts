@@ -196,8 +196,9 @@ export class RunSchedulerService {
             const [runPDA] = this.solanaService.getRunPDA(runNumericId);
             let startedRun: any = null;
             
-            if (this.solanaService.program && this.solanaService.program.account && this.solanaService.program.account.run) {
-              startedRun = await this.solanaService.program.account.run.fetch(runPDA);
+            const program = this.solanaService.getProgram();
+            if (program && program.account && program.account.run) {
+              startedRun = await program.account.run.fetch(runPDA);
             } else {
               // Fallback to manual decoding
               const decodedRun = await this.solanaService.decodeRunAccount(runPDA);
