@@ -121,3 +121,4 @@ backend-keypair.json
 .env.production
 .env.local
 
+.env.bak
