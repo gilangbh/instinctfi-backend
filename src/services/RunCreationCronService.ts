@@ -15,11 +15,11 @@ import { config } from '@/utils/config';
  * - Configurable via environment variables
  * 
  * Example schedules:
- * - '0 * * * *'        -> Every hour at minute 0
- * - '0 */2 * * *'      -> Every 2 hours
- * - '0 0,12 * * *'     -> At 12:00 AM and 12:00 PM
- * - '0 9,17 * * 1-5'   -> At 9 AM and 5 PM on weekdays
- * - '* * * * *'        -> Every minute (testing only)
+ * - 0 * * * *        -> Every hour at minute 0
+ * - 0 star/2 * * *      -> Every 2 hours
+ * - 0 0,12 * * *     -> At 12:00 AM and 12:00 PM
+ * - 0 9,17 * * 1-5   -> At 9 AM and 5 PM on weekdays
+ * - star * * * *        -> Every minute (testing only)
  */
 export class RunCreationCronService {
   private cronJob: nodeCron.ScheduledTask | null = null;
