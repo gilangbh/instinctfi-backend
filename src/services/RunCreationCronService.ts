@@ -114,6 +114,9 @@ export class RunCreationCronService {
       const totalRounds = parseInt(process.env.AUTO_RUN_TOTAL_ROUNDS || String(Math.floor(runDurationMinutes / votingInterval)));
       
       const runConfig = {
+        tradingPair: process.env.AUTO_RUN_TRADING_PAIR || 'SOL/USD',
+        coin: process.env.AUTO_RUN_COIN || 'SOL',
+        duration: runDurationMinutes,
         minDeposit: parseInt(process.env.AUTO_RUN_MIN_DEPOSIT || '500'), // $5.00 in cents
         maxDeposit: parseInt(process.env.AUTO_RUN_MAX_DEPOSIT || '10000'), // $100.00 in cents
         maxParticipants: parseInt(process.env.AUTO_RUN_MAX_PARTICIPANTS || '100'),
@@ -134,6 +137,9 @@ export class RunCreationCronService {
       const newRun = await this.prisma.run.create({
         data: {
           status: RunStatus.WAITING,
+          tradingPair: runConfig.tradingPair,
+          coin: runConfig.coin,
+          duration: runConfig.duration,
           minDeposit: runConfig.minDeposit,
           maxDeposit: runConfig.maxDeposit,
           maxParticipants: runConfig.maxParticipants,
