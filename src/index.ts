@@ -39,6 +39,9 @@ console.log('✅ RunService imported');
 import { RunSchedulerService } from '@/services/RunSchedulerService';
 console.log('✅ RunSchedulerService imported');
 
+import { RunCreationCronService } from '@/services/RunCreationCronService';
+console.log('✅ RunCreationCronService imported');
+
 import { DriftService } from '@/services/DriftService';
 console.log('✅ DriftService imported');
 
@@ -80,6 +83,7 @@ class App {
   private wsServer: WebSocketService;
   private priceService: PriceService;
   private runScheduler: RunSchedulerService | null = null;
+  private runCreationCron: RunCreationCronService | null = null;
 
   constructor() {
     try {
@@ -194,6 +198,17 @@ class App {
       
       logger.info('Starting RunScheduler...');
       this.runScheduler.start();
+
+      // Initialize run creation cron (will be started in start() method)
+      const enableRunCreationCron = process.env.ENABLE_RUN_CREATION_CRON === 'true';
+      if (enableRunCreationCron) {
+        logger.info('Creating RunCreationCronService...');
+        const cronSchedule = process.env.RUN_CREATION_CRON_SCHEDULE || '0 */2 * * *'; // Default: every 2 hours
+        this.runCreationCron = new RunCreationCronService(this.prisma, runService, cronSchedule);
+        logger.info('RunCreationCron will be started after database connection');
+      } else {
+        logger.info('Run creation cron is disabled (set ENABLE_RUN_CREATION_CRON=true to enable)');
+      }
 
       // Connect DriftService price updates to WebSocket broadcasts
       logger.info('Setting up Drift price callback...');
@@ -325,6 +340,14 @@ class App {
       console.log('✅ Price monitoring started');
       logger.info('Price monitoring service started');
 
+      // Start run creation cron if enabled
+      if (this.runCreationCron) {
+        console.log('Starting run creation cron...');
+        await this.runCreationCron.start();
+        console.log('✅ Run creation cron started');
+        logger.info('Run creation cron service started');
+      }
+
       // Graceful shutdown
       const gracefulShutdown = async (signal: string) => {
         logger.info(`Received ${signal}, shutting down gracefully`);
@@ -332,6 +355,11 @@ class App {
         // Stop run scheduler
         if (this.runScheduler) {
           this.runScheduler.stop();
+        }
+        
+        // Stop run creation cron
+        if (this.runCreationCron) {
+          this.runCreationCron.stop();
         }
         
         // Stop price monitoring service
