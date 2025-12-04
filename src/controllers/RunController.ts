@@ -373,6 +373,28 @@ export class RunController {
   };
 
   /**
+   * Get system logs for a run
+   */
+  getRunLogs = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const limit = parseInt(req.query.limit as string) || 50;
+      
+      const logs = await this.runService.getRunLogs(id, limit);
+
+      const response: ApiResponse = {
+        success: true,
+        data: logs,
+      };
+
+      res.json(response);
+    } catch (error) {
+      logger.error('Error in getRunLogs controller:', error);
+      this.handleError(error, res);
+    }
+  };
+
+  /**
    * End a run
    */
   endRun = async (req: Request, res: Response): Promise<void> => {

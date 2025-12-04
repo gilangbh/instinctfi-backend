@@ -10,6 +10,7 @@ import { SolanaService } from './SolanaService';
 import { getExplorerUrl } from '@/utils/solana';
 import { WebSocketService } from './WebSocketService';
 import { DriftIntegrationService } from './DriftIntegrationService';
+import { SystemLogService, LogType } from './SystemLogService';
 
 // Type for Run with included relations
 type RunWithParticipants = Run & {
@@ -22,6 +23,7 @@ export class RunService {
   private solanaService: SolanaService | null = null;
   private wsService: WebSocketService | null = null;
   private driftService: DriftIntegrationService | null = null;
+  private systemLogService: SystemLogService;
 
   constructor(
     private prisma: PrismaClient, 
@@ -44,6 +46,9 @@ export class RunService {
     
     // Drift service for trade execution
     this.driftService = driftService || null;
+    
+    // System log service
+    this.systemLogService = new SystemLogService(prisma);
   }
 
   /**
@@ -395,6 +400,14 @@ export class RunService {
       });
 
       logger.info(`User ${userId} joined run ${runId} with ${data.depositAmount} USDC`);
+      
+      // Log user join event
+      await this.systemLogService.logUserJoin(
+        runId,
+        participant.user.username || 'Anonymous',
+        participant.user.walletAddress
+      );
+      
       return participant;
     } catch (error) {
       logger.error('Error joining run:', error);
@@ -448,6 +461,12 @@ export class RunService {
       ]);
 
       logger.info(`User ${userId} left run ${runId}`);
+      
+      // Log user leave event
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (user) {
+        await this.systemLogService.logUserLeave(runId, user.username || 'Anonymous');
+      }
     } catch (error) {
       logger.error('Error leaving run:', error);
       throw error;
@@ -676,6 +695,10 @@ export class RunService {
 
         logger.info(`✅ Run started successfully: ${runId}`);
         logger.info(`   Database status: ACTIVE`);
+        
+        // Log run start event
+        const participantCount = run.participants?.length || 0;
+        await this.systemLogService.logRunStart(runId, participantCount, updatedRun.totalPool);
         if (this.solanaService) {
           logger.info(`   On-chain status: Active`);
         }
@@ -752,6 +775,15 @@ export class RunService {
         leverage: `${chaosModifiers.leverage.toFixed(1)}x (stored as ${leverageStored})`,
         positionSize: `${chaosModifiers.positionSizePercentage.toFixed(1)}% (stored as ${positionSizeStored})`,
       });
+      
+      // Log round start event
+      await this.systemLogService.logRoundStart(
+        runId,
+        round,
+        leverageStored,
+        positionSizeStored
+      );
+      
       return votingRound;
     } catch (error) {
       logger.error('Error creating voting round:', error);
@@ -1057,6 +1089,16 @@ export class RunService {
       // Don't update pool yet - will update when position closes
       logger.info(`Trade opened: ${runId} - Round ${round} - ${direction} - ${chaosModifiers.leverage.toFixed(1)}x leverage - ${chaosModifiers.positionSizePercentage.toFixed(1)}% position`);
       logger.info(`   Position will close when round ${round + 1} voting ends`);
+      
+      // Log trade executed event
+      await this.systemLogService.logTradeExecuted(
+        runId,
+        round,
+        direction,
+        leverageStored,
+        positionSizeStored,
+        parseFloat(entryPrice.toString())
+      );
 
       // Record trade on-chain (non-blocking - don't fail if this fails)
       const runNumericId = parseInt(runId) || Date.now();
@@ -1347,6 +1389,14 @@ export class RunService {
 
       // Update participant vote stats based on trade result
       await this.updateParticipantVoteStats(runId, round, trade.direction);
+      
+      // Log consensus reached event
+      await this.systemLogService.logConsensusReached(
+        runId,
+        round,
+        trade.direction,
+        pnl
+      );
 
       // Update trade record on-chain with final exit price and PnL (non-blocking)
       const runNumericId = parseInt(run.id) || Date.now();
@@ -1685,6 +1735,11 @@ export class RunService {
         if (this.solanaService) {
           logger.info(`   On-chain status: Settled`);
         }
+        
+        // Log run end event
+        const profitLoss = updatedRun.totalPool - updatedRun.startingPool;
+        await this.systemLogService.logRunEnd(runId, updatedRun.totalPool, profitLoss);
+        
         return updatedRun;
       } else {
         // This should not happen due to the error handling above, but just in case
@@ -1868,6 +1923,18 @@ export class RunService {
       });
     } catch (error) {
       logger.error('Error fetching current voting round:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get system logs for a run
+   */
+  async getRunLogs(runId: string, limit: number = 50): Promise<any[]> {
+    try {
+      return await this.systemLogService.getRunLogs(runId, limit);
+    } catch (error) {
+      logger.error('Error fetching run logs:', error);
       throw error;
     }
   }

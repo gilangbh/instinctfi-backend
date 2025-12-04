@@ -48,6 +48,11 @@ export const createRunRoutes = (runController: RunController, authMiddleware: Au
     runController.getCurrentVotingRound
   );
 
+  router.get(
+    '/:id/logs',
+    runController.getRunLogs
+  );
+
   // Protected routes (require authentication)
   router.use(authMiddleware.authenticate);
   router.use(authMiddleware.requireNotBanned);

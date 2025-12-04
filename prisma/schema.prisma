@@ -227,6 +227,19 @@ model PriceData {
   @@map("price_data")
 }
 
+model SystemLog {
+  id        String      @id @default(cuid())
+  runId     String?
+  type      LogType
+  message   String
+  metadata  Json?
+  createdAt DateTime    @default(now())
+
+  @@index([runId, createdAt])
+  @@index([type, createdAt])
+  @@map("system_logs")
+}
+
 // Enums
 enum RunStatus {
   WAITING
@@ -253,5 +266,18 @@ enum RoundStatus {
   CLOSED
   EXECUTING
   SETTLED
+}
+
+enum LogType {
+  CONSENSUS_REACHED
+  USER_JOIN
+  USER_LEAVE
+  SIGNAL_DETECTED
+  TRADE_EXECUTED
+  ROUND_START
+  ROUND_END
+  RUN_START
+  RUN_END
+  SYSTEM
 }
 
