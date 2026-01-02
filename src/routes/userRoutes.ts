@@ -58,6 +58,16 @@ export const createUserRoutes = (userController: UserController, authMiddleware:
     userController.getUserLevel
   );
 
+  router.get(
+    '/:id/extended-stats',
+    userController.getExtendedUserStats
+  );
+
+  router.get(
+    '/:id/achievements',
+    userController.getUserAchievements
+  );
+
   // Admin routes (require admin access)
   router.use(authMiddleware.requireAdmin);
 

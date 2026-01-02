@@ -179,6 +179,46 @@ export class UserController {
   };
 
   /**
+   * Get extended user statistics (NAV, Global Rank, etc.)
+   */
+  getExtendedUserStats = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const extendedStats = await this.userService.getExtendedUserStats(id);
+
+      const response: ApiResponse = {
+        success: true,
+        data: extendedStats,
+      };
+
+      res.json(response);
+    } catch (error) {
+      logger.error('Error in getExtendedUserStats controller:', error);
+      this.handleError(error, res);
+    }
+  };
+
+  /**
+   * Get user achievements
+   */
+  getUserAchievements = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const achievements = await this.userService.getUserAchievements(id);
+
+      const response: ApiResponse = {
+        success: true,
+        data: achievements,
+      };
+
+      res.json(response);
+    } catch (error) {
+      logger.error('Error in getUserAchievements controller:', error);
+      this.handleError(error, res);
+    }
+  };
+
+  /**
    * Get leaderboard
    */
   getLeaderboard = async (req: Request, res: Response): Promise<void> => {

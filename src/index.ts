@@ -54,12 +54,16 @@ console.log('✅ WaitlistService imported');
 import { PriceService } from '@/services/PriceService';
 console.log('✅ PriceService imported');
 
+import { ItemService } from '@/services/ItemService';
+console.log('✅ ItemService imported');
+
 console.log('Importing controllers...');
 import { UserController } from '@/controllers/UserController';
 import { RunController } from '@/controllers/RunController';
 import { MarketController } from '@/controllers/MarketController';
 import { AuthController } from '@/controllers/AuthController';
 import { WaitlistController } from '@/controllers/WaitlistController';
+import { ItemController } from '@/controllers/ItemController';
 console.log('✅ Controllers imported');
 
 console.log('Importing middleware and routes...');
@@ -84,6 +88,7 @@ class App {
   private priceService: PriceService;
   private runScheduler: RunSchedulerService | null = null;
   private runCreationCron: RunCreationCronService | null = null;
+  private itemService: ItemService | null = null;
 
   constructor() {
     try {
@@ -192,6 +197,10 @@ class App {
       logger.info('Creating WaitlistService...');
       const waitlistService = new WaitlistService();
 
+      logger.info('Creating ItemService...');
+      this.itemService = new ItemService(this.prisma);
+      // Note: Items initialization will happen in start() method after database connection
+
       // Initialize and start run scheduler
       logger.info('Creating RunSchedulerService...');
       this.runScheduler = new RunSchedulerService(this.prisma, runService, solanaService);
@@ -223,6 +232,7 @@ class App {
       const marketController = new MarketController(this.priceService);
       const authController = new AuthController(userService);
       const waitlistController = new WaitlistController(waitlistService);
+      const itemController = new ItemController(this.itemService);
 
       // Initialize middleware
       logger.info('Creating auth middleware...');
@@ -236,6 +246,7 @@ class App {
         marketController,
         authController,
         waitlistController,
+        itemController,
         authMiddleware
       );
       
@@ -316,6 +327,18 @@ class App {
       await this.prisma.$connect();
       console.log('✅ Database connected');
       logger.info('Connected to database');
+
+      // Initialize default items after database connection
+      if (this.itemService) {
+        logger.info('Initializing default items...');
+        try {
+          await this.itemService.initializeDefaultItems();
+          logger.info('✅ Default items initialized successfully');
+        } catch (error: any) {
+          logger.warn('⚠️  Failed to initialize default items (may already exist):', error);
+          // Don't throw - continue server startup even if items init fails
+        }
+      }
 
       // Start HTTP server
       console.log(`Starting HTTP server on port ${config.port}...`);
