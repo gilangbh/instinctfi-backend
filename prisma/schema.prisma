@@ -32,6 +32,7 @@ model User {
   chatMessages  ChatMessage[]
   chatDownvotes ChatDownvote[]
   xpHistory     XpHistory[]
+  loadout       UserLoadout[]
 
   @@map("users")
 }
@@ -279,5 +280,64 @@ enum LogType {
   RUN_START
   RUN_END
   SYSTEM
+}
+
+enum ItemType {
+  PASSIVE
+  ACTIVE
+  ECONOMY
+  OFFENSIVE
+  DEFENSIVE
+}
+
+enum BuffType {
+  XP_BOOST
+  FEE_REDUCTION
+  PROFIT_BOOST
+  VOTE_ACCURACY
+  LEVERAGE_BOOST
+  POSITION_SIZE
+  WIN_RATE_BOOST
+  DEPOSIT_BONUS
+  WITHDRAWAL_SPEED
+  COOLDOWN_REDUCTION
+}
+
+model Item {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String
+  type        ItemType
+  icon        String    // emoji or icon identifier
+  rarity      String    @default("COMMON") // COMMON, RARE, EPIC, LEGENDARY
+  buffType    BuffType
+  buffValue   Float     // percentage or multiplier
+  unlockLevel Int       @default(1) // minimum level required
+  unlockXp     Int       @default(0) // minimum XP required
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  userLoadouts UserLoadout[]
+
+  @@map("items")
+}
+
+model UserLoadout {
+  id        String   @id @default(cuid())
+  userId    String
+  itemId    String
+  isActive  Boolean  @default(false)
+  slot      Int?     // slot position (1-3 for active loadout)
+  equippedAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemId])
+  @@index([userId, isActive])
+  @@map("user_loadout")
 }
 

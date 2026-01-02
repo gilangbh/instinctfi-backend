@@ -1,5 +1,5 @@
 import { PrismaClient, User, Badge, UserBadge, XpHistory } from '@prisma/client';
-import { CreateUserRequest, UpdateUserRequest, UserStats } from '@/types';
+import { CreateUserRequest, UpdateUserRequest, UserStats, ExtendedUserStats } from '@/types';
 import { AppError } from '@/types';
 import { checkNewBadges, getXpLevel, getXpForNextLevel, getXpProgress } from '@/utils/xp';
 import logger from '@/utils/logger';
@@ -193,6 +193,20 @@ export class UserService {
       const totalVotes = votes.length;
       const correctVotes = runParticipants.reduce((sum, p) => sum + p.votesCorrect, 0);
 
+      // Calculate total profit from all completed runs
+      // Profit = finalShare - depositAmount for runs where finalShare exists
+      const totalProfit = runParticipants
+        .filter(p => p.finalShare !== null)
+        .reduce((sum, p) => {
+          const profit = (p.finalShare || 0) - p.depositAmount;
+          return sum + profit;
+        }, 0);
+
+      // Calculate active runs (runs that are not ENDED)
+      const activeRuns = runParticipants.filter(
+        p => p.run.status !== 'ENDED'
+      ).length;
+
       // Calculate consecutive wins (simplified)
       const consecutiveWins = 0; // TODO: Implement proper consecutive win calculation
 
@@ -201,9 +215,9 @@ export class UserService {
 
       return {
         totalRuns,
-        activeRuns: 0, // TODO: Calculate active runs
-        completedRuns: totalRuns,
-        totalProfit: 0, // TODO: Calculate total profit from run participants
+        activeRuns,
+        completedRuns: totalRuns - activeRuns,
+        totalProfit,
         winRate,
         totalVotes,
         correctVotes,
@@ -329,6 +343,48 @@ export class UserService {
   }
 
   /**
+   * Get all achievements with unlocked/locked status for user
+   */
+  async getUserAchievements(userId: string): Promise<any[]> {
+    try {
+      const user = await this.getUserWithDetails(userId);
+      if (!user) {
+        throw new AppError('User not found', 404);
+      }
+
+      const stats = await this.getUserStats(userId);
+      const userBadgeIds = new Set(user.badges.map(ub => ub.badgeId));
+
+      // Get all badges from database
+      const allBadges = await this.prisma.badge.findMany({
+        orderBy: { createdAt: 'asc' },
+      });
+
+      // Map badges with unlocked status
+      const achievements = allBadges.map((badge) => {
+        const isUnlocked = userBadgeIds.has(badge.id);
+        const userBadge = user.badges.find(ub => ub.badgeId === badge.id);
+
+        return {
+          id: badge.id,
+          name: badge.name,
+          emoji: badge.emoji,
+          description: badge.description,
+          xpReward: badge.xpReward,
+          isUnlocked,
+          earnedAt: userBadge?.earnedAt || null,
+          createdAt: badge.createdAt,
+        };
+      });
+
+      return achievements;
+    } catch (error) {
+      logger.error('Error fetching user achievements:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get user leaderboard
    */
   async getLeaderboard(limit: number = 10): Promise<User[]> {
@@ -417,6 +473,87 @@ export class UserService {
       };
     } catch (error) {
       logger.error('Error getting user level info:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get extended user statistics including Net Asset Value and Global Rank
+   */
+  async getExtendedUserStats(userId: string): Promise<ExtendedUserStats> {
+    try {
+      const user = await this.getUserById(userId);
+      if (!user) {
+        throw new AppError('User not found', 404);
+      }
+
+      // Get all run participants for this user
+      const runParticipants = await this.prisma.runParticipant.findMany({
+        where: { userId },
+        include: {
+          run: {
+            select: {
+              status: true,
+            },
+          },
+        },
+      });
+
+      // Calculate total deposits (all deposits across all runs)
+      const totalDeposits = runParticipants.reduce(
+        (sum, p) => sum + p.depositAmount,
+        0
+      );
+
+      // Calculate total withdrawals (sum of finalShare where withdrawn = true)
+      const totalWithdrawals = runParticipants
+        .filter(p => p.withdrawn && p.finalShare !== null)
+        .reduce((sum, p) => sum + (p.finalShare || 0), 0);
+
+      // Calculate active deposits (deposits in runs that are not ENDED)
+      const activeDeposits = runParticipants
+        .filter(p => p.run.status !== 'ENDED')
+        .reduce((sum, p) => sum + p.depositAmount, 0);
+
+      // Calculate total profit (sum of profit from all completed runs)
+      // Profit = finalShare - depositAmount for runs where finalShare exists
+      const totalProfit = runParticipants
+        .filter(p => p.finalShare !== null)
+        .reduce((sum, p) => {
+          const profit = (p.finalShare || 0) - p.depositAmount;
+          return sum + profit;
+        }, 0);
+
+      // Calculate Net Asset Value
+      // NAV = Total Deposits + Total Profit - Total Withdrawals
+      // Or more simply: NAV = Active Deposits + (Total Profit - Total Withdrawals from ended runs)
+      // For simplicity, we'll use: NAV = Total Deposits + Total Profit - Total Withdrawals
+      const netAssetValue = totalDeposits + totalProfit - totalWithdrawals;
+
+      // Calculate Global Rank based on XP
+      // Rank = number of users with higher XP + 1
+      const usersWithHigherXp = await this.prisma.user.count({
+        where: {
+          xp: {
+            gt: user.xp,
+          },
+        },
+      });
+
+      const globalRank = usersWithHigherXp + 1;
+
+      logger.info(`Extended stats calculated for user ${userId}: Rank ${globalRank}, NAV ${netAssetValue} cents`);
+
+      return {
+        globalRank,
+        netAssetValue,
+        totalProfit,
+        totalDeposits,
+        totalWithdrawals,
+        activeDeposits,
+      };
+    } catch (error) {
+      logger.error('Error getting extended user stats:', error);
       throw error;
     }
   }

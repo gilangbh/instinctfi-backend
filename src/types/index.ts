@@ -83,6 +83,15 @@ export interface UserStats {
   rank?: number;
 }
 
+export interface ExtendedUserStats {
+  globalRank: number;
+  netAssetValue: number; // in cents (USDC)
+  totalProfit: number; // in cents (USDC)
+  totalDeposits: number; // in cents (USDC)
+  totalWithdrawals: number; // in cents (USDC)
+  activeDeposits: number; // in cents (USDC) - deposits in active runs
+}
+
 // Badge Types
 export interface Badge {
   id: string;

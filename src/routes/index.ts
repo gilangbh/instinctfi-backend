@@ -4,6 +4,7 @@ import { RunController } from '@/controllers/RunController';
 import { MarketController } from '@/controllers/MarketController';
 import { AuthController } from '@/controllers/AuthController';
 import { WaitlistController } from '@/controllers/WaitlistController';
+import { ItemController } from '@/controllers/ItemController';
 import { AuthMiddleware } from '@/middleware/auth';
 import { createUserRoutes } from './userRoutes';
 import { createRunRoutes } from './runRoutes';
@@ -14,6 +15,7 @@ import { createAuthRoutes } from './authRoutes';
 import driftPriceRoutes from './driftPriceRoutes';
 import driftTradingRoutes from './driftTradingRoutes';
 import { createWaitlistRoutes } from './waitlistRoutes';
+import { createItemRoutes } from './itemRoutes';
 
 export const createRoutes = (
   userController: UserController,
@@ -21,6 +23,7 @@ export const createRoutes = (
   marketController: MarketController,
   authController: AuthController,
   waitlistController: WaitlistController,
+  itemController: ItemController,
   authMiddleware: AuthMiddleware
 ): Router => {
   const router = Router();
@@ -41,6 +44,7 @@ export const createRoutes = (
   router.use('/runs', createRunRoutes(runController, authMiddleware));
   router.use('/market', createMarketRoutes(marketController));
   router.use('/waitlist', createWaitlistRoutes(waitlistController));
+  router.use('/items', createItemRoutes(itemController, authMiddleware));
   
   // Solana routes - temporarily disabled due to IDL parsing issue
   // TODO: Fix IDL compatibility and re-enable
